@@ -1,0 +1,1 @@
+Java 17 + Spring Boot 3.3.6 (starter-parent), Spring Web + Data JPA + Bean Validation, MySQL 8.x driver at runtime, H2 in-memory DB for tests, Lombok for boilerplate, Spring DevTools for hot reload.

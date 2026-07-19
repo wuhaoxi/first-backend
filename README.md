@@ -1,0 +1,46 @@
+# my-first-project-backend
+
+Spring Boot REST API with JPA and MySQL persistence.
+
+## Prerequisites
+
+- Java 17+ (JDK)
+- MySQL 8.x (for dev profile; tests use H2 in-memory)
+
+## Quick Start
+
+```bash
+# Run tests (no MySQL required)
+./mvnw test
+
+# Start the application (requires MySQL running on localhost:3306)
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+## API Endpoints
+
+| Method | Path              | Description       | Request Body                          |
+|--------|-------------------|-------------------|---------------------------------------|
+| GET    | /api/users        | List all users    | —                                     |
+| GET    | /api/users/{id}   | Get user by ID    | —                                     |
+| POST   | /api/users        | Create a user     | `{"name": "...", "email": "..."}`    |
+| PUT    | /api/users/{id}   | Update a user     | `{"name": "...", "email": "..."}`    |
+| DELETE | /api/users/{id}   | Delete a user     | —                                     |
+
+## Project Structure
+
+```
+src/main/java/com/first/app/
+├── MyApplication.java         # Entry point
+├── controller/UserController  # REST endpoints
+├── service/UserService        # Business logic
+├── repository/UserRepository  # Data access
+├── entity/User                # JPA entity
+├── dto/                       # Request DTOs
+└── exception/                 # Error handling
+```
+
+## Profiles
+
+- `dev` (default) — connects to MySQL at `localhost:3306/myapp`
+- `test` — uses H2 in-memory database (used by test suite automatically)

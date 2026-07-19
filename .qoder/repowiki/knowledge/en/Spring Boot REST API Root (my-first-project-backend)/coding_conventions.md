@@ -1,0 +1,2 @@
+- Profile-driven data source selection: `dev` binds to MySQL, `test` switches to H2 so the same codebase runs against different databases without conditional logic.
+- Lombok annotations are used throughout and explicitly excluded from the Spring Boot repackaged jar via the `spring-boot-maven-plugin` excludes block.

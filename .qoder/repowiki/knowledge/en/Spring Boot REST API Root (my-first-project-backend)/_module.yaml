@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: ""
+title: Spring Boot REST API Root (my-first-project-backend)
+scope:
+    - README.md
+    - .gitignore
+    - pom.xml
+    - mvnw.cmd
+    - mvnw
+source_files: []
+depends_on: []
+related_to: []

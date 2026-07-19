@@ -1,0 +1,1 @@
+Maven root of a Spring Boot 3.3 REST API exposing CRUD endpoints for users backed by JPA and MySQL, with H2 for tests.

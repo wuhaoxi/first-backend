@@ -1,0 +1,1 @@
+Tests run standalone with `./mvnw test` (H2); the dev server requires a running MySQL instance on `localhost:3306/myapp` and is started via `./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`.
