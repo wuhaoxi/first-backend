@@ -6,3 +6,9 @@ spring:
 
 server:
   port: 8080
+
+app:
+  jwt:
+    secret: this-is-a-test-secret-key-for-dev-only-change-in-production
+    access-token-expiration: 900000
+    refresh-token-expiration: 604800000

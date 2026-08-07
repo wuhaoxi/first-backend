@@ -3,6 +3,7 @@ package com.first.app.service;
 import com.first.app.dto.CreateUserRequest;
 import com.first.app.dto.UpdateUserRequest;
 import com.first.app.entity.User;
+import com.first.app.entity.UserStatus;
 import com.first.app.exception.DuplicateEmailException;
 import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.repository.UserRepository;
@@ -53,9 +54,9 @@ public class UserService {
     }
 
     public void delete(Long id) {
-        if (!userRepository.existsById(id)) {
-            throw new ResourceNotFoundException("User not found with id: " + id);
-        }
-        userRepository.deleteById(id);
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+        user.setStatus(UserStatus.DELETED);
+        userRepository.save(user);
     }
 }

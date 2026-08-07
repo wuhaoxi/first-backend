@@ -6,9 +6,14 @@ import com.first.app.dto.TodoPriority;
 import com.first.app.dto.UpdateTodoRequest;
 import com.first.app.entity.Todo;
 import com.first.app.exception.ResourceNotFoundException;
+import com.first.app.security.JwtAuthFilter;
+import com.first.app.security.JwtService;
+import com.first.app.security.StateCheckFilter;
+import com.first.app.repository.UserRepository;
 import com.first.app.service.TodoService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
@@ -25,6 +30,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(TodoController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class TodoControllerTest {
 
     @Autowired
@@ -35,6 +41,18 @@ class TodoControllerTest {
 
     @MockBean
     private TodoService todoService;
+
+    @MockBean
+    private JwtService jwtService;
+
+    @MockBean
+    private UserRepository userRepository;
+
+    @MockBean
+    private JwtAuthFilter jwtAuthFilter;
+
+    @MockBean
+    private StateCheckFilter stateCheckFilter;
 
     private Todo buildTodo(Long id, String title) {
         return Todo.builder()

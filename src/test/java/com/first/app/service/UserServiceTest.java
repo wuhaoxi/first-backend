@@ -110,11 +110,13 @@ class UserServiceTest {
     }
 
     @Test
-    void delete_shouldCallRepositoryDelete() {
-        when(userRepository.existsById(1L)).thenReturn(true);
+    void delete_shouldSoftDeleteBySettingStatusToDeleted() {
+        User user = User.builder().id(1L).name("Alice").email("alice@example.com").build();
+        when(userRepository.findById(1L)).thenReturn(java.util.Optional.of(user));
 
         userService.delete(1L);
 
-        verify(userRepository).deleteById(1L);
+        assertThat(user.getStatus()).isEqualTo(com.first.app.entity.UserStatus.DELETED);
+        verify(userRepository).save(user);
     }
 }
