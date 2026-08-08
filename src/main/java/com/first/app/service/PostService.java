@@ -5,14 +5,11 @@ import com.first.app.dto.ImageUploadResponse;
 import com.first.app.dto.UpdatePostRequest;
 import com.first.app.entity.Post;
 import com.first.app.entity.PostStatus;
-import com.first.app.entity.User;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.repository.PostRepository;
-import com.first.app.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,7 +26,6 @@ import java.util.stream.Collectors;
 public class PostService {
 
     private final PostRepository postRepository;
-    private final UserRepository userRepository;
 
     @Value("${app.upload.dir:./uploads}")
     private String uploadDir;
@@ -38,9 +34,6 @@ public class PostService {
     private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
     public Post create(CreatePostRequest request, Long userId) {
-        User author = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
-
         List<String> tags = sanitizeTags(request.getTags());
         validateTags(tags);
 
@@ -51,7 +44,7 @@ public class PostService {
                 .content(request.getContent())
                 .tags(tags)
                 .status(status)
-                .author(author)
+                .authorId(userId)
                 .build();
 
         return postRepository.save(post);
@@ -64,6 +57,14 @@ public class PostService {
     public Post findById(Long id) {
         return postRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Post not found with id: " + id));
+    }
+
+    public Post findByIdPublic(Long id) {
+        Post post = findById(id);
+        if (post.getStatus() != PostStatus.PUBLISHED) {
+            throw new ResourceNotFoundException("Post not found with id: " + id);
+        }
+        return post;
     }
 
     public Post update(Long id, UpdatePostRequest request, Long userId) {
@@ -87,39 +88,15 @@ public class PostService {
             post.setTags(tags);
         }
         if (request.getStatus() != null) {
-            validateStatusTransition(post.getStatus(), request.getStatus());
             post.setStatus(request.getStatus());
         }
 
         return postRepository.save(post);
     }
 
-    public void archive(Long id, Long userId) {
+    public void delete(Long id, Long userId) {
         Post post = getPostAsAuthor(id, userId);
-        post.setStatus(PostStatus.ARCHIVED);
-        postRepository.save(post);
-    }
-
-    private Post getPostAsAuthor(Long postId, Long userId) {
-        Post post = findById(postId);
-        if (!post.getAuthor().getId().equals(userId)) {
-            throw new AccessDeniedException("You can only edit your own posts");
-        }
-        return post;
-    }
-
-    private void validateStatusTransition(PostStatus from, PostStatus to) {
-        if (to == PostStatus.DRAFT && (from == PostStatus.PUBLISHED || from == PostStatus.ARCHIVED)) {
-            throw new InvalidRequestException("Cannot revert " + from + " to DRAFT");
-        }
-    }
-
-    private List<String> sanitizeTags(List<String> tags) {
-        if (tags == null) return List.of();
-        return tags.stream()
-                .map(String::trim)
-                .filter(t -> !t.isEmpty())
-                .collect(Collectors.toList());
+        postRepository.delete(post);
     }
 
     public ImageUploadResponse uploadImage(Long id, MultipartFile file, Long userId) {
@@ -156,6 +133,22 @@ public class PostService {
         }
     }
 
+    private Post getPostAsAuthor(Long postId, Long userId) {
+        Post post = findById(postId);
+        if (!post.getAuthorId().equals(userId)) {
+            throw new InvalidRequestException("You can only edit your own posts");
+        }
+        return post;
+    }
+
+    private List<String> sanitizeTags(List<String> tags) {
+        if (tags == null) return List.of();
+        return tags.stream()
+                .map(String::trim)
+                .filter(t -> !t.isEmpty())
+                .collect(Collectors.toList());
+    }
+
     private void validateTags(List<String> tags) {
         if (tags != null) {
             if (tags.size() > 10) {
@@ -167,9 +160,6 @@ public class PostService {
                 }
                 if (tag.length() > 50) {
                     throw new InvalidRequestException("each tag must not exceed 50 characters");
-                }
-                if (tag.contains(",")) {
-                    throw new InvalidRequestException("tags must not contain commas");
                 }
             }
         }

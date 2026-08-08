@@ -1,6 +1,5 @@
 package com.first.app.entity;
 
-import com.first.app.converter.StringListConverter;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -9,6 +8,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,15 +43,14 @@ public class Post extends BaseEntity {
     @Builder.Default
     private PostStatus status = PostStatus.DRAFT;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "author_id", nullable = false)
-    private User author;
+    @Column(name = "author_id", nullable = false)
+    private Long authorId;
 
     @Builder.Default
     private int commentCount = 0;
 
-    @Convert(converter = StringListConverter.class)
-    @Column(length = 550)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSON")
     @Builder.Default
     private List<String> tags = new ArrayList<>();
 }

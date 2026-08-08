@@ -43,19 +43,8 @@ public class PostController {
     }
 
     @GetMapping("/{id}")
-    public PostResponse findById(@PathVariable Long id,
-                                  HttpServletRequest httpRequest) {
-        Long userId = (Long) httpRequest.getAttribute("userId");
-        Post post = postService.findById(id);
-
-        // DRAFT/ARCHIVED: only author can see
-        if (post.getStatus() == com.first.app.entity.PostStatus.DRAFT
-                || post.getStatus() == com.first.app.entity.PostStatus.ARCHIVED) {
-            if (userId == null || !post.getAuthor().getId().equals(userId)) {
-                throw new com.first.app.exception.ResourceNotFoundException("Post not found with id: " + id);
-            }
-        }
-
+    public PostResponse findById(@PathVariable Long id) {
+        Post post = postService.findByIdPublic(id);
         return PostResponse.from(post);
     }
 
@@ -78,7 +67,7 @@ public class PostController {
         if (userId == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        postService.archive(id, userId);
+        postService.delete(id, userId);
         return ResponseEntity.noContent().build();
     }
 

@@ -4,7 +4,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 
 import java.util.List;
 
@@ -18,19 +17,10 @@ class PostTest {
 
     @Test
     void shouldAutoGenerateIdAndSetDefaultsOnPersist() {
-        User author = User.builder()
-                .name("Test Author")
-                .email("author@test.com")
-                .passwordHash("hash")
-                .status(UserStatus.ACTIVE)
-                .failedLoginAttempts(0)
-                .build();
-        entityManager.persist(author);
-
         Post post = Post.builder()
                 .title("Test Post")
                 .content("# Hello World")
-                .author(author)
+                .authorId(1L)
                 .build();
 
         entityManager.persist(post);
@@ -41,24 +31,15 @@ class PostTest {
         assertThat(post.getUpdatedAt()).isNotNull();
         assertThat(post.getStatus()).isEqualTo(PostStatus.DRAFT);
         assertThat(post.getCommentCount()).isEqualTo(0);
-        assertThat(post.getAuthor().getId()).isEqualTo(author.getId());
+        assertThat(post.getAuthorId()).isEqualTo(1L);
     }
 
     @Test
-    void shouldPersistPostWithTags() {
-        User author = User.builder()
-                .name("Tag Author")
-                .email("tag@test.com")
-                .passwordHash("hash")
-                .status(UserStatus.ACTIVE)
-                .failedLoginAttempts(0)
-                .build();
-        entityManager.persist(author);
-
+    void shouldPersistPostWithJsonTags() {
         Post post = Post.builder()
                 .title("Tagged Post")
                 .content("# Tagged")
-                .author(author)
+                .authorId(2L)
                 .tags(List.of("travel", "food"))
                 .status(PostStatus.PUBLISHED)
                 .build();

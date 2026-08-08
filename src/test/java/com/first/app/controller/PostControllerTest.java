@@ -8,8 +8,6 @@ import com.first.app.dto.PostSummary;
 import com.first.app.dto.UpdatePostRequest;
 import com.first.app.entity.Post;
 import com.first.app.entity.PostStatus;
-import com.first.app.entity.User;
-import com.first.app.entity.UserStatus;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.security.JwtAuthFilter;
@@ -24,7 +22,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
@@ -62,17 +59,10 @@ class PostControllerTest {
     @MockBean
     private StateCheckFilter stateCheckFilter;
 
-    private User buildAuthor() {
-        return User.builder()
-                .id(1L).name("Author").email("a@t.com")
-                .passwordHash("hash").status(UserStatus.ACTIVE)
-                .failedLoginAttempts(0).build();
-    }
-
-    private Post buildPost(Long id, PostStatus status, User author) {
+    private Post buildPost(Long id, PostStatus status, Long authorId) {
         return Post.builder()
                 .id(id).title("Test Post").content("# Hello")
-                .status(status).author(author)
+                .status(status).authorId(authorId)
                 .tags(List.of("travel"))
                 .commentCount(0)
                 .createdAt(LocalDateTime.of(2026, 8, 8, 10, 0))
@@ -86,8 +76,7 @@ class PostControllerTest {
         req.setTitle("Test Post");
         req.setContent("# Hello");
 
-        User author = buildAuthor();
-        Post post = buildPost(1L, PostStatus.DRAFT, author);
+        Post post = buildPost(1L, PostStatus.DRAFT, 1L);
 
         when(postService.create(any(CreatePostRequest.class), anyLong())).thenReturn(post);
 
@@ -98,7 +87,8 @@ class PostControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.title").value("Test Post"))
-                .andExpect(jsonPath("$.status").value("DRAFT"));
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.authorId").value(1));
     }
 
     @Test
@@ -115,9 +105,8 @@ class PostControllerTest {
 
     @Test
     void findAll_returns200() throws Exception {
-        User author = buildAuthor();
-        Post post1 = buildPost(1L, PostStatus.PUBLISHED, author);
-        Post post2 = buildPost(2L, PostStatus.PUBLISHED, author);
+        Post post1 = buildPost(1L, PostStatus.PUBLISHED, 1L);
+        Post post2 = buildPost(2L, PostStatus.PUBLISHED, 2L);
 
         when(postService.findPublishedList()).thenReturn(List.of(post2, post1));
 
@@ -131,20 +120,21 @@ class PostControllerTest {
 
     @Test
     void findById_published_returns200() throws Exception {
-        User author = buildAuthor();
-        Post post = buildPost(1L, PostStatus.PUBLISHED, author);
+        Post post = buildPost(1L, PostStatus.PUBLISHED, 1L);
 
-        when(postService.findById(1L)).thenReturn(post);
+        when(postService.findByIdPublic(1L)).thenReturn(post);
 
         mockMvc.perform(get("/api/posts/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Test Post"))
-                .andExpect(jsonPath("$.content").value("# Hello"));
+                .andExpect(jsonPath("$.content").value("# Hello"))
+                .andExpect(jsonPath("$.authorId").value(1));
     }
 
     @Test
-    void findById_notFound_returns404() throws Exception {
-        when(postService.findById(99L)).thenThrow(new ResourceNotFoundException("Post not found with id: 99"));
+    void findById_draft_returns404() throws Exception {
+        when(postService.findByIdPublic(99L))
+                .thenThrow(new ResourceNotFoundException("Post not found with id: 99"));
 
         mockMvc.perform(get("/api/posts/99"))
                 .andExpect(status().isNotFound());
@@ -155,8 +145,7 @@ class PostControllerTest {
         UpdatePostRequest req = new UpdatePostRequest();
         req.setTitle("Updated");
 
-        User author = buildAuthor();
-        Post post = buildPost(1L, PostStatus.DRAFT, author);
+        Post post = buildPost(1L, PostStatus.DRAFT, 1L);
         post.setTitle("Updated");
 
         when(postService.update(eq(1L), any(UpdatePostRequest.class), eq(1L))).thenReturn(post);
@@ -181,18 +170,18 @@ class PostControllerTest {
     }
 
     @Test
-    void update_forbidden_returns403() throws Exception {
+    void update_forbidden_returns400() throws Exception {
         UpdatePostRequest req = new UpdatePostRequest();
         req.setTitle("Updated");
 
         when(postService.update(eq(1L), any(UpdatePostRequest.class), eq(2L)))
-                .thenThrow(new AccessDeniedException("You can only edit your own posts"));
+                .thenThrow(new InvalidRequestException("You can only edit your own posts"));
 
         mockMvc.perform(put("/api/posts/1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req))
                         .requestAttr("userId", 2L))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isBadRequest());
     }
 
     @Test
