@@ -16,9 +16,17 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
 
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
   api-docs:
     path: /v3/api-docs
+
+app:
+  upload:
+    dir: ./uploads

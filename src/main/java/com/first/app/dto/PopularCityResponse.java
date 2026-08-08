@@ -1,0 +1,15 @@
+package com.first.app.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class PopularCityResponse {
+    private String slug;
+    private String name;
+    private String coverImageUrl;
+    private int guideCount;
+}
