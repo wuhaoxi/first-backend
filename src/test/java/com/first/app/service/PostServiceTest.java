@@ -200,6 +200,24 @@ class PostServiceTest {
     }
 
     @Test
+    void shouldCreatePostWithCoverImage() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setTitle("With Cover");
+        request.setContent("# Cover");
+        request.setCoverImage("https://example.com/photo.jpg");
+
+        when(postRepository.save(any(Post.class))).thenAnswer(inv -> {
+            Post p = inv.getArgument(0);
+            p.setId(12L);
+            return p;
+        });
+
+        Post result = postService.create(request, AUTHOR_ID);
+
+        assertThat(result.getCoverImage()).isEqualTo("https://example.com/photo.jpg");
+    }
+
+    @Test
     void shouldSanitizeAndValidateTags() {
         CreatePostRequest request = new CreatePostRequest();
         request.setTitle("Tagged");

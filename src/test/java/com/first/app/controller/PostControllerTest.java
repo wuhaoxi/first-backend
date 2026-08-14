@@ -141,6 +141,33 @@ class PostControllerTest {
     }
 
     @Test
+    void findById_shouldReturnDraftForAuthor() throws Exception {
+        Post draftPost = buildPost(1L, PostStatus.DRAFT, 1L);
+
+        when(postService.findById(1L)).thenReturn(draftPost);
+
+        mockMvc.perform(get("/api/posts/1")
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Test Post"))
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.authorId").value(1));
+    }
+
+    @Test
+    void findById_shouldReturn404ForNonAuthorDraft() throws Exception {
+        Post draftPost = buildPost(1L, PostStatus.DRAFT, 1L);
+
+        when(postService.findById(1L)).thenReturn(draftPost);
+        when(postService.findByIdPublic(1L))
+                .thenThrow(new ResourceNotFoundException("Post not found with id: 1"));
+
+        mockMvc.perform(get("/api/posts/1")
+                        .requestAttr("userId", 2L))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void update_returns200() throws Exception {
         UpdatePostRequest req = new UpdatePostRequest();
         req.setTitle("Updated");

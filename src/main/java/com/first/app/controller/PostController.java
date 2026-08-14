@@ -43,8 +43,15 @@ public class PostController {
     }
 
     @GetMapping("/{id}")
-    public PostResponse findById(@PathVariable Long id) {
-        Post post = postService.findByIdPublic(id);
+    public PostResponse findById(@PathVariable Long id,
+                                  HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        Post post;
+        if (userId != null && userId.equals(postService.findById(id).getAuthorId())) {
+            post = postService.findById(id);
+        } else {
+            post = postService.findByIdPublic(id);
+        }
         return PostResponse.from(post);
     }
 

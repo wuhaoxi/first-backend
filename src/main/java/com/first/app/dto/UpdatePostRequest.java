@@ -16,5 +16,7 @@ public class UpdatePostRequest {
 
     private List<String> tags;
 
+    private String coverImage;
+
     private PostStatus status;
 }

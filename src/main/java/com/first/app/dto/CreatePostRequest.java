@@ -19,5 +19,7 @@ public class CreatePostRequest {
 
     private List<String> tags;
 
+    private String coverImage;
+
     private PostStatus status;
 }

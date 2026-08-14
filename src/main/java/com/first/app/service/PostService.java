@@ -45,6 +45,7 @@ public class PostService {
                 .tags(tags)
                 .status(status)
                 .authorId(userId)
+                .coverImage(request.getCoverImage())
                 .build();
 
         return postRepository.save(post);
@@ -89,6 +90,9 @@ public class PostService {
         }
         if (request.getStatus() != null) {
             post.setStatus(request.getStatus());
+        }
+        if (request.getCoverImage() != null) {
+            post.setCoverImage(request.getCoverImage());
         }
 
         return postRepository.save(post);

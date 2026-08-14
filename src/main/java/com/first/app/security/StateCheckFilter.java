@@ -14,10 +14,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
 public class StateCheckFilter extends OncePerRequestFilter {
+
+    private static final Set<String> PUBLIC_AUTH_PATHS = Set.of(
+            "/api/auth/login",
+            "/api/auth/register",
+            "/api/auth/refresh",
+            "/api/auth/verify-email",
+            "/api/auth/logout"
+    );
 
     private final ObjectMapper objectMapper;
 
@@ -27,7 +36,7 @@ public class StateCheckFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
 
         String path = request.getRequestURI();
-        if (path.startsWith("/api/auth/")) {
+        if (PUBLIC_AUTH_PATHS.contains(path)) {
             filterChain.doFilter(request, response);
             return;
         }
