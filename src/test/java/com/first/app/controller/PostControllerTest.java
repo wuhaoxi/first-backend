@@ -20,13 +20,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -101,6 +104,59 @@ class PostControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void create_withLongCoverImage_returns400() throws Exception {
+        CreatePostRequest req = new CreatePostRequest();
+        req.setTitle("Test");
+        req.setContent("# Hello");
+        req.setCoverImage("https://example.com/" + "a".repeat(490)); // > 500 chars total
+
+        Post post = buildPost(1L, PostStatus.DRAFT, 1L);
+        when(postService.create(any(CreatePostRequest.class), anyLong())).thenReturn(post);
+
+        mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req))
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"));
+    }
+
+    @Test
+    void update_withLongCoverImage_returns400() throws Exception {
+        UpdatePostRequest req = new UpdatePostRequest();
+        req.setTitle("Updated");
+        req.setCoverImage("https://example.com/" + "a".repeat(490)); // > 500 chars total
+
+        Post post = buildPost(1L, PostStatus.DRAFT, 1L);
+        when(postService.update(eq(1L), any(UpdatePostRequest.class), eq(1L))).thenReturn(post);
+
+        mockMvc.perform(put("/api/posts/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req))
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"));
+    }
+
+    @Test
+    void create_whenDataIntegrityViolation_returns409WithDetail() throws Exception {
+        CreatePostRequest req = new CreatePostRequest();
+        req.setTitle("Test");
+        req.setContent("# Hello");
+
+        when(postService.create(any(CreatePostRequest.class), anyLong()))
+                .thenThrow(new DataIntegrityViolationException("stmt",
+                        new SQLException("Data too long for column 'content'", "22001")));
+
+        mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req))
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(containsString("Data too long for column 'content'")));
     }
 
     @Test

@@ -88,6 +88,30 @@ class PostServiceTest {
     }
 
     @Test
+    void create_shouldRejectOversizedByteContent() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setTitle("Oversized");
+        request.setContent("文".repeat(25000)); // 25,000 CJK chars = 75,000 UTF-8 bytes > 60,000 limit
+
+        assertThatThrownBy(() -> postService.create(request, AUTHOR_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("content");
+    }
+
+    @Test
+    void update_shouldRejectOversizedByteContent() {
+        Post existing = buildPost(1L, PostStatus.DRAFT, AUTHOR_ID);
+        UpdatePostRequest request = new UpdatePostRequest();
+        request.setContent("文".repeat(25000)); // 75,000 UTF-8 bytes > 60,000 limit
+
+        when(postRepository.findById(1L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> postService.update(1L, request, AUTHOR_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("content");
+    }
+
+    @Test
     void shouldFindPublishedList() {
         Post post1 = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
         Post post2 = buildPost(2L, PostStatus.PUBLISHED, OTHER_USER_ID);

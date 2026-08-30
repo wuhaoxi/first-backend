@@ -32,10 +32,12 @@ public class PostService {
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/png");
     private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+    private static final int MAX_CONTENT_BYTES = 60_000; // headroom under MySQL TEXT limit (65,535 bytes)
 
     public Post create(CreatePostRequest request, Long userId) {
         List<String> tags = sanitizeTags(request.getTags());
         validateTags(tags);
+        validateContentLength(request.getContent());
 
         PostStatus status = request.getStatus() != null ? request.getStatus() : PostStatus.DRAFT;
 
@@ -81,6 +83,7 @@ public class PostService {
             if (request.getContent().isBlank()) {
                 throw new InvalidRequestException("content must not be blank");
             }
+            validateContentLength(request.getContent());
             post.setContent(request.getContent());
         }
         if (request.getTags() != null) {
@@ -143,6 +146,12 @@ public class PostService {
             throw new InvalidRequestException("You can only edit your own posts");
         }
         return post;
+    }
+
+    private void validateContentLength(String content) {
+        if (content != null && content.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_CONTENT_BYTES) {
+            throw new InvalidRequestException("content must not exceed " + MAX_CONTENT_BYTES + " bytes");
+        }
     }
 
     private List<String> sanitizeTags(List<String> tags) {

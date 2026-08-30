@@ -16,6 +16,7 @@ public class UpdatePostRequest {
 
     private List<String> tags;
 
+    @Size(max = 500, message = "coverImage must not exceed 500 characters")
     private String coverImage;
 
     private PostStatus status;

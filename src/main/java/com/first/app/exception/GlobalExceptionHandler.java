@@ -31,8 +31,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex) {
+        String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : null;
+        String message = "Data conflict: " + (detail != null ? detail
+                : "the resource could not be saved due to a constraint violation");
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of("Data conflict: the resource could not be saved due to a constraint violation", 409));
+                .body(ErrorResponse.of(message, 409));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
