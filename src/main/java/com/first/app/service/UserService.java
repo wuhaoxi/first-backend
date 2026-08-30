@@ -46,7 +46,10 @@ public class UserService {
         if (request.getName() != null) {
             existing.setName(request.getName());
         }
-        if (request.getEmail() != null) {
+        if (request.getEmail() != null && !request.getEmail().equalsIgnoreCase(existing.getEmail())) {
+            userRepository.findByEmail(request.getEmail()).ifPresent(other -> {
+                throw new DuplicateEmailException("Email already exists: " + request.getEmail());
+            });
             existing.setEmail(request.getEmail());
         }
 

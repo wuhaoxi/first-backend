@@ -110,6 +110,35 @@ class UserServiceTest {
     }
 
     @Test
+    void update_shouldThrowDuplicateEmailException_whenEmailAlreadyInUse() {
+        User existing = User.builder().id(1L).name("Alice").email("alice@example.com").build();
+        UpdateUserRequest request = UpdateUserRequest.builder().name("Alice").email("bob@example.com").build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.findByEmail("bob@example.com"))
+                .thenReturn(Optional.of(User.builder().id(2L).name("Bob").email("bob@example.com").build()));
+
+        assertThatThrownBy(() -> userService.update(1L, request))
+                .isInstanceOf(DuplicateEmailException.class)
+                .hasMessageContaining("bob@example.com");
+    }
+
+    @Test
+    void update_shouldAllowKeepingSameEmail() {
+        User existing = User.builder().id(1L).name("Alice").email("alice@example.com").build();
+        UpdateUserRequest request = UpdateUserRequest.builder().name("Alice Updated").email("alice@example.com").build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User result = userService.update(1L, request);
+
+        assertThat(result.getName()).isEqualTo("Alice Updated");
+        assertThat(result.getEmail()).isEqualTo("alice@example.com");
+        verify(userRepository, never()).findByEmail(anyString());
+    }
+
+    @Test
     void delete_shouldSoftDeleteBySettingStatusToDeleted() {
         User user = User.builder().id(1L).name("Alice").email("alice@example.com").build();
         when(userRepository.findById(1L)).thenReturn(java.util.Optional.of(user));
