@@ -64,6 +64,9 @@ public class GlobalExceptionHandler {
         if (ex.getMessage() != null && ex.getMessage().contains("TodoPriority")) {
             message = "priority must be one of: LOW, MEDIUM, HIGH";
         }
+        if (ex.getMessage() != null && ex.getMessage().contains("VoteType")) {
+            message = "voteType must be one of: UP, DOWN";
+        }
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(message, 400));
     }
