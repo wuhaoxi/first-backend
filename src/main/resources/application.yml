@@ -3,6 +3,10 @@ spring:
     name: my-first-project-backend
   profiles:
     active: dev
+  data:
+    web:
+      pageable:
+        max-page-size: 100
 
 server:
   port: 8080

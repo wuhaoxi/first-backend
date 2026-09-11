@@ -23,6 +23,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,6 +36,9 @@ class BookmarkServiceTest {
 
     @Mock
     private PostService postService;
+
+    @Mock
+    private PostStatsEnricher postStatsEnricher;
 
     @InjectMocks
     private BookmarkService bookmarkService;
@@ -99,5 +103,26 @@ class BookmarkServiceTest {
         assertThat(response.getSize()).isEqualTo(20);
         assertThat(response.getTotalElements()).isEqualTo(2);
         assertThat(response.getTotalPages()).isEqualTo(1);
+    }
+
+    @Test
+    void listBookmarks_enrichesReturnedItemsWithStats() {
+        Post post1 = buildPublishedPost(1L, "Post 1");
+        Post post2 = buildPublishedPost(2L, "Post 2");
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Post> page = new PageImpl<>(List.of(post1, post2), pageable, 2);
+        when(bookmarkRepository.findBookmarkedPosts(USER_ID, pageable)).thenReturn(page);
+        doAnswer(inv -> {
+            List<PostSummary> summaries = inv.getArgument(0);
+            summaries.get(0).setUpVoteCount(7);
+            summaries.get(0).setBookmarkCount(3);
+            return null;
+        }).when(postStatsEnricher).enrich(any());
+
+        PageResponse<PostSummary> response = bookmarkService.listBookmarks(USER_ID, pageable);
+
+        assertThat(response.getContent().get(0).getUpVoteCount()).isEqualTo(7);
+        assertThat(response.getContent().get(0).getBookmarkCount()).isEqualTo(3);
+        verify(postStatsEnricher).enrich(any());
     }
 }

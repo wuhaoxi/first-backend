@@ -12,7 +12,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -69,5 +72,24 @@ class VoteRepositoryTest {
 
         assertThatThrownBy(() -> voteRepository.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void shouldCountByPostIdsAndVoteType_groupingByPost() {
+        entityManager.persist(buildVote(1L, 1L, VoteType.UP));
+        entityManager.persist(buildVote(1L, 2L, VoteType.UP));
+        entityManager.persist(buildVote(1L, 3L, VoteType.DOWN));
+        entityManager.persist(buildVote(2L, 1L, VoteType.UP));
+        entityManager.persist(buildVote(3L, 1L, VoteType.DOWN));
+        entityManager.flush();
+
+        List<Object[]> result = voteRepository.countByPostIdsAndVoteType(List.of(1L, 2L, 3L), VoteType.UP);
+
+        // Post 3 has only a DOWN vote and posts with no UP votes are simply absent
+        assertThat(result).hasSize(2);
+        Map<Long, Long> counts = result.stream().collect(Collectors.toMap(
+                row -> (Long) row[0],
+                row -> ((Number) row[1]).longValue()));
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(1L, 2L, 2L, 1L));
     }
 }

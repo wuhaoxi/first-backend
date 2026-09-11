@@ -2,10 +2,11 @@ package com.first.app.controller;
 
 import com.first.app.dto.CreatePostRequest;
 import com.first.app.dto.ImageUploadResponse;
+import com.first.app.dto.PostListResponse;
 import com.first.app.dto.PostResponse;
-import com.first.app.dto.PostSummary;
 import com.first.app.dto.UpdatePostRequest;
 import com.first.app.entity.Post;
+import com.first.app.repository.BookmarkRepository;
 import com.first.app.service.PostService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -15,14 +16,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/posts")
 @RequiredArgsConstructor
 public class PostController {
 
     private final PostService postService;
+    private final BookmarkRepository bookmarkRepository;
 
     @PostMapping
     public ResponseEntity<PostResponse> create(@Valid @RequestBody CreatePostRequest request,
@@ -36,10 +36,11 @@ public class PostController {
     }
 
     @GetMapping
-    public List<PostSummary> findAll() {
-        return postService.findPublishedList().stream()
-                .map(PostSummary::from)
-                .toList();
+    public PostListResponse findAll(@RequestParam(required = false) String sort,
+                                    @RequestParam(required = false) Integer page,
+                                    @RequestParam(required = false) Integer size,
+                                    @RequestParam(required = false) String cursor) {
+        return postService.findList(sort, page, size, cursor);
     }
 
     @GetMapping("/{id}")
@@ -52,7 +53,11 @@ public class PostController {
         } else {
             post = postService.findByIdPublic(id);
         }
-        return PostResponse.from(post);
+        PostResponse response = PostResponse.from(post);
+        if (userId != null) {
+            response.setBookmarked(bookmarkRepository.findByPostIdAndUserId(id, userId).isPresent());
+        }
+        return response;
     }
 
     @PutMapping("/{id}")

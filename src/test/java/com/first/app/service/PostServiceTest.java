@@ -1,30 +1,40 @@
 package com.first.app.service;
 
 import com.first.app.dto.CreatePostRequest;
+import com.first.app.dto.ImageUploadResponse;
+import com.first.app.dto.PostListResponse;
+import com.first.app.dto.PostSummary;
 import com.first.app.dto.UpdatePostRequest;
 import com.first.app.entity.Post;
 import com.first.app.entity.PostStatus;
-import com.first.app.dto.ImageUploadResponse;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.repository.PostRepository;
+import com.first.app.util.PostCursorCodec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,6 +42,9 @@ class PostServiceTest {
 
     @Mock
     private PostRepository postRepository;
+
+    @Mock
+    private PostStatsEnricher postStatsEnricher;
 
     @InjectMocks
     private PostService postService;
@@ -45,6 +58,37 @@ class PostServiceTest {
                 .status(status).authorId(authorId)
                 .tags(List.of("travel"))
                 .build();
+    }
+
+    private static final LocalDateTime BASE_TIME = LocalDateTime.of(2026, 9, 3, 12, 0, 0);
+
+    private Post buildPublishedPost(Long id, LocalDateTime createdAt) {
+        return Post.builder()
+                .id(id).title("Post " + id).content("content")
+                .status(PostStatus.PUBLISHED).authorId(AUTHOR_ID)
+                .createdAt(createdAt)
+                .build();
+    }
+
+    private Post buildCommentedPost(Long id, int commentCount) {
+        return Post.builder()
+                .id(id).title("Post " + id).content("content")
+                .status(PostStatus.PUBLISHED).authorId(AUTHOR_ID)
+                .commentCount(commentCount)
+                .build();
+    }
+
+    private List<Post> buildPublishedPosts(int count, long topId, LocalDateTime topTime) {
+        return LongStream.range(0, count)
+                .mapToObj(i -> buildPublishedPost(topId - i, topTime.minusMinutes(i)))
+                .toList();
+    }
+
+    private static List<Long> idsDescending(long from, long to) {
+        return LongStream.iterate(from, i -> i - 1)
+                .limit(from - to + 1)
+                .boxed()
+                .toList();
     }
 
     @Test
@@ -308,5 +352,207 @@ class PostServiceTest {
         assertThatThrownBy(() -> postService.uploadImage(1L, null, AUTHOR_ID))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("No image file provided");
+    }
+
+    @Test
+    void findList_defaultsToLatestOffsetEnvelope() {
+        Post newer = buildPublishedPost(2L, BASE_TIME);
+        Post older = buildPublishedPost(1L, BASE_TIME.minusMinutes(1));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(postRepository.findByStatusOrderByCreatedAtDescIdDesc(PostStatus.PUBLISHED, pageable))
+                .thenReturn(new PageImpl<>(List.of(newer, older), pageable, 2));
+
+        PostListResponse response = postService.findList(null, null, null, null);
+
+        assertThat(response.getContent()).extracting(PostSummary::getId).containsExactly(2L, 1L);
+        assertThat(response.getPage()).isZero();
+        assertThat(response.getSize()).isEqualTo(20);
+        assertThat(response.getTotalElements()).isEqualTo(2);
+        assertThat(response.getTotalPages()).isEqualTo(1);
+        assertThat(response.isHasMore()).isFalse();
+        assertThat(response.getNextCursor()).isNull();
+        verify(postStatsEnricher).enrich(any());
+    }
+
+    @Test
+    void findList_offsetHasMoreUsesPagePlusOneMath() {
+        List<Post> firstWindow = buildPublishedPosts(20, 20L, BASE_TIME);
+        Pageable firstPage = PageRequest.of(0, 20);
+        when(postRepository.findByStatusOrderByCreatedAtDescIdDesc(PostStatus.PUBLISHED, firstPage))
+                .thenReturn(new PageImpl<>(firstWindow, firstPage, 45));
+
+        PostListResponse first = postService.findList("latest", 0, 20, null);
+
+        assertThat(first.getTotalPages()).isEqualTo(3);
+        assertThat(first.isHasMore()).isTrue();
+        assertThat(first.getNextCursor()).isNotNull();
+
+        List<Post> lastWindow = buildPublishedPosts(5, 5L, BASE_TIME.minusMinutes(40));
+        Pageable lastPage = PageRequest.of(2, 20);
+        when(postRepository.findByStatusOrderByCreatedAtDescIdDesc(PostStatus.PUBLISHED, lastPage))
+                .thenReturn(new PageImpl<>(lastWindow, lastPage, 45));
+
+        PostListResponse last = postService.findList("latest", 2, 20, null);
+
+        assertThat(last.isHasMore()).isFalse();
+        assertThat(last.getNextCursor()).isNull();
+    }
+
+    @Test
+    void findList_cursorFlow_pagesStrictlyAfterCursorWithoutDuplicates() {
+        String startCursor = PostCursorCodec.encode(BASE_TIME.plusMinutes(1), 32L);
+        List<Post> firstWindow = buildPublishedPosts(21, 31L, BASE_TIME); // ids 31..11, probe +1
+        when(postRepository.findLatestBeforeCursor(eq(PostStatus.PUBLISHED), any(), any(),
+                eq(PageRequest.of(0, 21))))
+                .thenReturn(firstWindow);
+        when(postRepository.countByStatus(PostStatus.PUBLISHED)).thenReturn(42L);
+
+        PostListResponse first = postService.findList("latest", 5, 20, startCursor);
+
+        assertThat(first.getContent()).extracting(PostSummary::getId)
+                .containsExactlyElementsOf(idsDescending(31, 12));
+        assertThat(first.getPage()).isZero(); // page ignored in cursor mode
+        assertThat(first.getSize()).isEqualTo(20);
+        assertThat(first.getTotalElements()).isEqualTo(42);
+        assertThat(first.getTotalPages()).isEqualTo(3);
+        assertThat(first.isHasMore()).isTrue();
+        assertThat(first.getNextCursor()).isNotNull();
+
+        PostCursorCodec.Cursor decoded = PostCursorCodec.decode(first.getNextCursor());
+        assertThat(decoded.createdAt()).isEqualTo(BASE_TIME.minusMinutes(19));
+        assertThat(decoded.id()).isEqualTo(12L);
+
+        List<Post> secondWindow = buildPublishedPosts(11, 11L, BASE_TIME.minusMinutes(20));
+        when(postRepository.findLatestBeforeCursor(eq(PostStatus.PUBLISHED),
+                eq(decoded.createdAt()), eq(decoded.id()), eq(PageRequest.of(0, 21))))
+                .thenReturn(secondWindow);
+
+        PostListResponse second = postService.findList("latest", 3, 20, first.getNextCursor());
+
+        assertThat(second.getContent()).extracting(PostSummary::getId)
+                .containsExactlyElementsOf(idsDescending(11, 1));
+        assertThat(second.getPage()).isZero();
+        assertThat(second.isHasMore()).isFalse();
+        assertThat(second.getNextCursor()).isNull();
+    }
+
+    @Test
+    void findList_upvotes_hydratesInIdPageOrderAndNeverEmitsCursor() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(postRepository.findIdPageByUpvoteCount(PostStatus.PUBLISHED, pageable))
+                .thenReturn(new PageImpl<>(List.of(3L, 1L, 2L), pageable, 50));
+        when(postRepository.findAllById(List.of(3L, 1L, 2L)))
+                .thenReturn(List.of(
+                        buildPublishedPost(1L, BASE_TIME.minusMinutes(3)),
+                        buildPublishedPost(3L, BASE_TIME),
+                        buildPublishedPost(2L, BASE_TIME.minusMinutes(9))));
+
+        PostListResponse response = postService.findList("upvotes", 0, 20, null);
+
+        assertThat(response.getContent()).extracting(PostSummary::getId)
+                .containsExactly(3L, 1L, 2L);
+        assertThat(response.getTotalElements()).isEqualTo(50);
+        assertThat(response.getTotalPages()).isEqualTo(3);
+        assertThat(response.isHasMore()).isTrue();
+        assertThat(response.getNextCursor()).isNull();
+        verify(postStatsEnricher).enrich(any());
+    }
+
+    @Test
+    void findList_upvotes_emptyIdPage_skipsHydration() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(postRepository.findIdPageByUpvoteCount(PostStatus.PUBLISHED, pageable))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        PostListResponse response = postService.findList("upvotes", 0, 20, null);
+
+        assertThat(response.getContent()).isEmpty();
+        assertThat(response.getTotalPages()).isZero();
+        assertThat(response.isHasMore()).isFalse();
+        assertThat(response.getNextCursor()).isNull();
+        verify(postRepository, never()).findAllById(any());
+    }
+
+    @Test
+    void findList_comments_ordersByCommentCountWithoutCursor() {
+        Post mostCommented = buildCommentedPost(1L, 9);
+        Post lessCommented = buildCommentedPost(2L, 5);
+        Pageable pageable = PageRequest.of(0, 20);
+        when(postRepository.findByStatusOrderByCommentCountDescIdDesc(PostStatus.PUBLISHED, pageable))
+                .thenReturn(new PageImpl<>(List.of(mostCommented, lessCommented), pageable, 26));
+
+        PostListResponse response = postService.findList("comments", 0, null, null);
+
+        assertThat(response.getContent()).extracting(PostSummary::getId).containsExactly(1L, 2L);
+        assertThat(response.getContent()).extracting(PostSummary::getCommentCount)
+                .containsExactly(9, 5);
+        assertThat(response.getTotalPages()).isEqualTo(2);
+        assertThat(response.isHasMore()).isTrue();
+        assertThat(response.getNextCursor()).isNull();
+    }
+
+    @Test
+    void findList_unknownSort_throws400() {
+        assertThatThrownBy(() -> postService.findList("trending", null, null, null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Invalid sort: trending");
+    }
+
+    @Test
+    void findList_sizeBelowOne_throws400() {
+        assertThatThrownBy(() -> postService.findList(null, 0, 0, null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Invalid size");
+    }
+
+    @Test
+    void findList_sizeAboveMax_isClampedTo100() {
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        when(postRepository.findByStatusOrderByCreatedAtDescIdDesc(eq(PostStatus.PUBLISHED),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 100), 0));
+
+        PostListResponse response = postService.findList("latest", 0, 999, null);
+
+        verify(postRepository).findByStatusOrderByCreatedAtDescIdDesc(eq(PostStatus.PUBLISHED),
+                pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(100);
+        assertThat(response.getSize()).isEqualTo(100);
+        assertThat(response.getTotalPages()).isZero();
+    }
+
+    @Test
+    void findList_negativePage_throws400() {
+        assertThatThrownBy(() -> postService.findList("latest", -1, null, null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Invalid page");
+    }
+
+    @Test
+    void findList_malformedCursor_throws400() {
+        assertThatThrownBy(() -> postService.findList("latest", null, null, "not-base64!!"))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Invalid cursor");
+    }
+
+    @Test
+    void findList_cursorWithNonLatestSort_throws400() {
+        String cursor = PostCursorCodec.encode(BASE_TIME, 42L);
+
+        assertThatThrownBy(() -> postService.findList("upvotes", null, null, cursor))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Cursor is only supported with sort=latest");
+    }
+
+    @Test
+    void findList_blankCursor_isTreatedAsAbsent() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(postRepository.findByStatusOrderByCreatedAtDescIdDesc(PostStatus.PUBLISHED, pageable))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        PostListResponse response = postService.findList("latest", 0, 20, "   ");
+
+        assertThat(response.getPage()).isZero();
+        verify(postRepository, never()).findLatestBeforeCursor(any(), any(), any(), any());
     }
 }

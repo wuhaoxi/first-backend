@@ -21,6 +21,8 @@ public class PostSummary extends BaseResponse {
     private List<String> tags;
     private Long authorId;
     private int commentCount;
+    private int upVoteCount;
+    private int bookmarkCount;
 
     public static PostSummary from(Post post) {
         return PostSummary.builder()

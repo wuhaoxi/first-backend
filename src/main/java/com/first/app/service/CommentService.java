@@ -67,14 +67,20 @@ public class CommentService {
         postService.findByIdPublic(postId);
         return PageResponse.from(commentRepository
                 .findByPostIdAndParentCommentIdIsNullAndDeletedFalseOrderByCreatedAtAsc(postId, pageable)
-                .map(CommentResponse::from));
+                .map(this::withReplyCount));
     }
 
     public PageResponse<CommentResponse> findReplies(Long parentId, Pageable pageable) {
         getVisibleComment(parentId);
         return PageResponse.from(commentRepository
                 .findByParentCommentIdAndDeletedFalseOrderByCreatedAtAsc(parentId, pageable)
-                .map(CommentResponse::from));
+                .map(this::withReplyCount));
+    }
+
+    private CommentResponse withReplyCount(Comment comment) {
+        CommentResponse response = CommentResponse.from(comment);
+        response.setReplyCount(commentRepository.countByParentCommentIdAndDeletedFalse(comment.getId()));
+        return response;
     }
 
     @Transactional

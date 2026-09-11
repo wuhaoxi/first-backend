@@ -5,6 +5,7 @@ import com.first.app.dto.PostSummary;
 import com.first.app.entity.Bookmark;
 import com.first.app.repository.BookmarkRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ public class BookmarkService {
 
     private final BookmarkRepository bookmarkRepository;
     private final PostService postService;
+    private final PostStatsEnricher postStatsEnricher;
 
     @Transactional
     public boolean toggle(Long postId, Long userId) {
@@ -36,7 +38,8 @@ public class BookmarkService {
     }
 
     public PageResponse<PostSummary> listBookmarks(Long userId, Pageable pageable) {
-        return PageResponse.from(
-                bookmarkRepository.findBookmarkedPosts(userId, pageable).map(PostSummary::from));
+        Page<PostSummary> page = bookmarkRepository.findBookmarkedPosts(userId, pageable).map(PostSummary::from);
+        postStatsEnricher.enrich(page.getContent());
+        return PageResponse.from(page);
     }
 }

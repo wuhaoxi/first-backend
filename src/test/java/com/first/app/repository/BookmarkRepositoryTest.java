@@ -14,7 +14,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -92,5 +95,22 @@ class BookmarkRepositoryTest {
 
         assertThatThrownBy(() -> bookmarkRepository.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void shouldCountByPostIds_groupingByPost() {
+        entityManager.persist(buildBookmark(1L, 1L));
+        entityManager.persist(buildBookmark(1L, 2L));
+        entityManager.persist(buildBookmark(2L, 1L));
+        entityManager.flush();
+
+        List<Object[]> result = bookmarkRepository.countByPostIds(List.of(1L, 2L, 3L));
+
+        // Post 3 has no bookmarks and is simply absent from the result
+        assertThat(result).hasSize(2);
+        Map<Long, Long> counts = result.stream().collect(Collectors.toMap(
+                row -> (Long) row[0],
+                row -> ((Number) row[1]).longValue()));
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(1L, 2L, 2L, 1L));
     }
 }

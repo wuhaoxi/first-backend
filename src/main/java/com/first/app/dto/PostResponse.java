@@ -24,6 +24,13 @@ public class PostResponse extends BaseResponse {
     private Long authorId;
     private int commentCount;
 
+    /**
+     * Whether the current user has bookmarked this post.
+     * null when the request is anonymous (no userId).
+     * Populated only by {@code PostController.findById}; not set by {@code PostResponse.from}.
+     */
+    private Boolean bookmarked;
+
     public static PostResponse from(Post post) {
         return PostResponse.builder()
                 .id(post.getId())

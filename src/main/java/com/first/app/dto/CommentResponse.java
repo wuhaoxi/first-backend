@@ -19,6 +19,12 @@ public class CommentResponse extends BaseResponse {
     private String content;
     private Long parentCommentId;
 
+    /**
+     * Number of visible (non-deleted) direct replies to this comment.
+     * Populated by {@code CommentService} for list endpoints; 0 for freshly created comments.
+     */
+    private long replyCount;
+
     public static CommentResponse from(Comment comment) {
         return CommentResponse.builder()
                 .id(comment.getId())

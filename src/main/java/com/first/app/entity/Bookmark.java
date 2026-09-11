@@ -14,7 +14,8 @@ import lombok.experimental.SuperBuilder;
 @Table(name = "bookmarks", uniqueConstraints = {
         @UniqueConstraint(name = "uk_bookmarks_post_user", columnNames = {"post_id", "user_id"})
 }, indexes = {
-        @Index(name = "idx_bookmarks_user_id", columnList = "user_id")
+        @Index(name = "idx_bookmarks_user_id", columnList = "user_id"),
+        @Index(name = "idx_bookmarks_post_id", columnList = "post_id")
 })
 @Data
 @NoArgsConstructor

@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
@@ -135,6 +136,19 @@ class CommentControllerTest {
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void findTopLevel_sizeAboveMax_isClampedTo100() throws Exception {
+        when(commentService.findTopLevel(eq(1L), any())).thenAnswer(inv -> {
+            Pageable pageable = inv.getArgument(1);
+            return new PageResponse<CommentResponse>(
+                    List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0, 0);
+        });
+
+        mockMvc.perform(get("/api/posts/1/comments").param("size", "500"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(100));
     }
 
     @Test

@@ -161,15 +161,39 @@ class CommentServiceTest {
                 PageRequest.of(0, 20), 2);
         when(commentRepository.findByPostIdAndParentCommentIdIsNullAndDeletedFalseOrderByCreatedAtAsc(
                 POST_ID, PageRequest.of(0, 20))).thenReturn(page);
+        when(commentRepository.countByParentCommentIdAndDeletedFalse(1L)).thenReturn(3L);
+        when(commentRepository.countByParentCommentIdAndDeletedFalse(2L)).thenReturn(0L);
 
         PageResponse<CommentResponse> result = commentService.findTopLevel(POST_ID, PageRequest.of(0, 20));
 
         assertThat(result.getContent()).hasSize(2);
         assertThat(result.getContent().get(0).getContent()).isEqualTo("c1");
+        assertThat(result.getContent().get(0).getReplyCount()).isEqualTo(3);
+        assertThat(result.getContent().get(1).getReplyCount()).isZero();
         assertThat(result.getPage()).isZero();
         assertThat(result.getSize()).isEqualTo(20);
         assertThat(result.getTotalElements()).isEqualTo(2);
         assertThat(result.getTotalPages()).isEqualTo(1);
+        verify(commentRepository).countByParentCommentIdAndDeletedFalse(1L);
+        verify(commentRepository).countByParentCommentIdAndDeletedFalse(2L);
+    }
+
+    @Test
+    void findReplies_shouldPopulateReplyCount() {
+        when(commentRepository.findById(5L))
+                .thenReturn(Optional.of(buildComment(5L, POST_ID, AUTHOR_ID, null, "parent")));
+        Page<Comment> page = new PageImpl<>(
+                List.of(buildComment(2L, POST_ID, OTHER_USER_ID, 5L, "r1")),
+                PageRequest.of(0, 20), 1);
+        when(commentRepository.findByParentCommentIdAndDeletedFalseOrderByCreatedAtAsc(
+                5L, PageRequest.of(0, 20))).thenReturn(page);
+        when(commentRepository.countByParentCommentIdAndDeletedFalse(2L)).thenReturn(1L);
+
+        PageResponse<CommentResponse> result = commentService.findReplies(5L, PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getReplyCount()).isEqualTo(1);
+        verify(commentRepository).countByParentCommentIdAndDeletedFalse(2L);
     }
 
     @Test

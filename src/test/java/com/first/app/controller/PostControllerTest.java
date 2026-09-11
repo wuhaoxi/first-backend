@@ -3,16 +3,19 @@ package com.first.app.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.first.app.dto.CreatePostRequest;
 import com.first.app.dto.ImageUploadResponse;
+import com.first.app.dto.PostListResponse;
 import com.first.app.dto.PostResponse;
 import com.first.app.dto.PostSummary;
 import com.first.app.dto.UpdatePostRequest;
 import com.first.app.entity.Post;
 import com.first.app.entity.PostStatus;
+import com.first.app.entity.Bookmark;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.security.JwtAuthFilter;
 import com.first.app.security.JwtService;
 import com.first.app.security.StateCheckFilter;
+import com.first.app.repository.BookmarkRepository;
 import com.first.app.repository.UserRepository;
 import com.first.app.service.PostService;
 import org.junit.jupiter.api.Test;
@@ -28,11 +31,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -49,6 +55,9 @@ class PostControllerTest {
 
     @MockBean
     private PostService postService;
+
+    @MockBean
+    private BookmarkRepository bookmarkRepository;
 
     @MockBean
     private JwtService jwtService;
@@ -161,17 +170,128 @@ class PostControllerTest {
 
     @Test
     void findAll_returns200() throws Exception {
-        Post post1 = buildPost(1L, PostStatus.PUBLISHED, 1L);
-        Post post2 = buildPost(2L, PostStatus.PUBLISHED, 2L);
+        PostSummary summary1 = PostSummary.builder()
+                .id(2L).title("Test Post").authorId(2L)
+                .commentCount(3).upVoteCount(5).bookmarkCount(2)
+                .createdAt(LocalDateTime.of(2026, 8, 8, 10, 0))
+                .build();
+        PostSummary summary2 = PostSummary.builder()
+                .id(1L).title("Test Post").authorId(1L)
+                .commentCount(0).upVoteCount(0).bookmarkCount(0)
+                .createdAt(LocalDateTime.of(2026, 8, 8, 9, 0))
+                .build();
+        PostListResponse response = PostListResponse.builder()
+                .content(List.of(summary1, summary2))
+                .page(0).size(20).totalElements(2).totalPages(1)
+                .nextCursor(null).hasMore(false)
+                .build();
 
-        when(postService.findPublishedList()).thenReturn(List.of(post2, post1));
+        when(postService.findList(null, null, null, null)).thenReturn(response);
 
         mockMvc.perform(get("/api/posts"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].title").value("Test Post"))
-                .andExpect(jsonPath("$[0].status").doesNotExist())
-                .andExpect(jsonPath("$[0].content").doesNotExist());
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].title").value("Test Post"))
+                .andExpect(jsonPath("$.content[0].status").doesNotExist())
+                .andExpect(jsonPath("$.content[0].content").doesNotExist())
+                .andExpect(jsonPath("$.content[0].upVoteCount").value(5))
+                .andExpect(jsonPath("$.content[0].bookmarkCount").value(2))
+                .andExpect(jsonPath("$.content[0].commentCount").value(3))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalPages").value(1))
+                .andExpect(jsonPath("$.hasMore").value(false))
+                .andExpect(jsonPath("$.nextCursor").doesNotExist());
+    }
+
+    @Test
+    void findAll_passesParamsToService() throws Exception {
+        PostListResponse response = PostListResponse.builder()
+                .content(List.of())
+                .page(1).size(5).totalElements(0).totalPages(0)
+                .nextCursor(null).hasMore(false)
+                .build();
+
+        when(postService.findList("upvotes", 1, 5, null)).thenReturn(response);
+
+        mockMvc.perform(get("/api/posts")
+                        .param("sort", "upvotes")
+                        .param("page", "1")
+                        .param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(5));
+
+        verify(postService).findList("upvotes", 1, 5, null);
+    }
+
+    @Test
+    void findAll_passesCursorToService() throws Exception {
+        PostListResponse response = PostListResponse.builder()
+                .content(List.of())
+                .page(0).size(20).totalElements(0).totalPages(0)
+                .nextCursor(null).hasMore(false)
+                .build();
+
+        when(postService.findList(null, null, null, "opaque-cursor")).thenReturn(response);
+
+        mockMvc.perform(get("/api/posts").param("cursor", "opaque-cursor"))
+                .andExpect(status().isOk());
+
+        verify(postService).findList(null, null, null, "opaque-cursor");
+    }
+
+    @Test
+    void findAll_invalidSort_returns400() throws Exception {
+        when(postService.findList(eq("trending"), any(), any(), any()))
+                .thenThrow(new InvalidRequestException("Invalid sort: trending"));
+
+        mockMvc.perform(get("/api/posts").param("sort", "trending"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid sort: trending"));
+    }
+
+    @Test
+    void findAll_sizeZero_returns400() throws Exception {
+        when(postService.findList(any(), any(), eq(0), any()))
+                .thenThrow(new InvalidRequestException("Invalid size"));
+
+        mockMvc.perform(get("/api/posts").param("size", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid size"));
+    }
+
+    @Test
+    void findAll_negativePage_returns400() throws Exception {
+        when(postService.findList(any(), eq(-1), any(), any()))
+                .thenThrow(new InvalidRequestException("Invalid page"));
+
+        mockMvc.perform(get("/api/posts").param("page", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid page"));
+    }
+
+    @Test
+    void findAll_cursorWithNonLatestSort_returns400() throws Exception {
+        when(postService.findList(eq("upvotes"), any(), any(), eq("abc")))
+                .thenThrow(new InvalidRequestException("Cursor is only supported with sort=latest"));
+
+        mockMvc.perform(get("/api/posts")
+                        .param("sort", "upvotes")
+                        .param("cursor", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Cursor is only supported with sort=latest"));
+    }
+
+    @Test
+    void findAll_malformedCursor_returns400() throws Exception {
+        when(postService.findList(isNull(), any(), any(), eq("not-base64!!")))
+                .thenThrow(new InvalidRequestException("Invalid cursor"));
+
+        mockMvc.perform(get("/api/posts").param("cursor", "not-base64!!"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid cursor"));
     }
 
     @Test
@@ -194,6 +314,44 @@ class PostControllerTest {
 
         mockMvc.perform(get("/api/posts/99"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void findById_bookmarked_returnsTrue() throws Exception {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, 1L);
+        when(postService.findById(1L)).thenReturn(post);
+        when(postService.findByIdPublic(1L)).thenReturn(post);
+        when(bookmarkRepository.findByPostIdAndUserId(1L, 1L))
+                .thenReturn(Optional.of(Bookmark.builder().id(1L).postId(1L).userId(1L).build()));
+
+        mockMvc.perform(get("/api/posts/1")
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bookmarked").value(true));
+    }
+
+    @Test
+    void findById_notBookmarked_returnsFalse() throws Exception {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, 1L);
+        when(postService.findById(1L)).thenReturn(post);
+        when(postService.findByIdPublic(1L)).thenReturn(post);
+        when(bookmarkRepository.findByPostIdAndUserId(1L, 2L))
+                .thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/posts/1")
+                        .requestAttr("userId", 2L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bookmarked").value(false));
+    }
+
+    @Test
+    void findById_anonymous_returnsNullBookmarked() throws Exception {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, 1L);
+        when(postService.findByIdPublic(1L)).thenReturn(post);
+
+        mockMvc.perform(get("/api/posts/1"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("\"bookmarked\":null")));
     }
 
     @Test

@@ -67,6 +67,7 @@ class BookmarkControllerTest {
     void list_returns200PageResponse() throws Exception {
         PostSummary summary = PostSummary.builder()
                 .id(1L).title("Post 1").commentCount(0)
+                .upVoteCount(4).bookmarkCount(2)
                 .build();
         PageResponse<PostSummary> page = new PageResponse<>(List.of(summary), 0, 20, 1, 1);
         when(bookmarkService.listBookmarks(eq(1L), any(Pageable.class))).thenReturn(page);
@@ -76,6 +77,8 @@ class BookmarkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].title").value("Post 1"))
+                .andExpect(jsonPath("$.content[0].upVoteCount").value(4))
+                .andExpect(jsonPath("$.content[0].bookmarkCount").value(2))
                 .andExpect(jsonPath("$.totalElements").value(1));
     }
 

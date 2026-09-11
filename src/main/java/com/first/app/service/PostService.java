@@ -2,14 +2,21 @@ package com.first.app.service;
 
 import com.first.app.dto.CreatePostRequest;
 import com.first.app.dto.ImageUploadResponse;
+import com.first.app.dto.PostListResponse;
+import com.first.app.dto.PostSort;
+import com.first.app.dto.PostSummary;
 import com.first.app.dto.UpdatePostRequest;
 import com.first.app.entity.Post;
 import com.first.app.entity.PostStatus;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.repository.PostRepository;
+import com.first.app.util.PostCursorCodec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -18,6 +25,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -26,9 +35,13 @@ import java.util.stream.Collectors;
 public class PostService {
 
     private final PostRepository postRepository;
+    private final PostStatsEnricher postStatsEnricher;
 
     @Value("${app.upload.dir:./uploads}")
     private String uploadDir;
+
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/png");
     private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -55,6 +68,95 @@ public class PostService {
 
     public List<Post> findPublishedList() {
         return postRepository.findByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED);
+    }
+
+    public PostListResponse findList(String sort, Integer page, Integer size, String cursor) {
+        PostSort resolvedSort = PostSort.from(sort);
+        String resolvedCursor = (cursor == null || cursor.isBlank()) ? null : cursor;
+        if (resolvedCursor != null && resolvedSort != PostSort.LATEST) {
+            throw new InvalidRequestException("Cursor is only supported with sort=latest");
+        }
+
+        int resolvedSize = normalizeSize(size);
+        if (resolvedCursor != null) {
+            return findListByCursor(resolvedSize, resolvedCursor);
+        }
+        return findListByPage(resolvedSort, normalizePage(page), resolvedSize);
+    }
+
+    private PostListResponse findListByCursor(int size, String cursor) {
+        PostCursorCodec.Cursor decoded = PostCursorCodec.decode(cursor);
+        List<Post> fetched = postRepository.findLatestBeforeCursor(
+                PostStatus.PUBLISHED, decoded.createdAt(), decoded.id(), PageRequest.of(0, size + 1));
+        boolean hasMore = fetched.size() > size;
+        List<Post> posts = hasMore ? fetched.subList(0, size) : fetched;
+        long totalElements = postRepository.countByStatus(PostStatus.PUBLISHED);
+        return buildResponse(posts, 0, size, totalElements, hasMore, PostSort.LATEST);
+    }
+
+    private PostListResponse findListByPage(PostSort sort, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        if (sort == PostSort.UPVOTES) {
+            Page<Long> idPage = postRepository.findIdPageByUpvoteCount(PostStatus.PUBLISHED, pageable);
+            return buildResponse(hydrateInOrder(idPage.getContent()), page, size,
+                    idPage.getTotalElements(), page + 1 < idPage.getTotalPages(), sort);
+        }
+        Page<Post> postPage = sort == PostSort.COMMENTS
+                ? postRepository.findByStatusOrderByCommentCountDescIdDesc(PostStatus.PUBLISHED, pageable)
+                : postRepository.findByStatusOrderByCreatedAtDescIdDesc(PostStatus.PUBLISHED, pageable);
+        return buildResponse(postPage.getContent(), page, size, postPage.getTotalElements(),
+                page + 1 < postPage.getTotalPages(), sort);
+    }
+
+    private List<Post> hydrateInOrder(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Post> byId = postRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Post::getId, post -> post));
+        return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+    }
+
+    private PostListResponse buildResponse(List<Post> posts, int page, int size, long totalElements,
+                                           boolean hasMore, PostSort sort) {
+        List<PostSummary> content = posts.stream().map(PostSummary::from).toList();
+        postStatsEnricher.enrich(content);
+
+        String nextCursor = null;
+        if (sort == PostSort.LATEST && hasMore && !posts.isEmpty()) {
+            Post last = posts.get(posts.size() - 1);
+            nextCursor = PostCursorCodec.encode(last.getCreatedAt(), last.getId());
+        }
+
+        return PostListResponse.builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages(totalElements, size))
+                .nextCursor(nextCursor)
+                .hasMore(hasMore)
+                .build();
+    }
+
+    private int normalizeSize(Integer size) {
+        int resolved = size == null ? DEFAULT_PAGE_SIZE : size;
+        if (resolved < 1) {
+            throw new InvalidRequestException("Invalid size");
+        }
+        return Math.min(resolved, MAX_PAGE_SIZE);
+    }
+
+    private int normalizePage(Integer page) {
+        int resolved = page == null ? 0 : page;
+        if (resolved < 0) {
+            throw new InvalidRequestException("Invalid page");
+        }
+        return resolved;
+    }
+
+    private static int totalPages(long totalElements, int size) {
+        return (int) Math.ceil((double) totalElements / size);
     }
 
     public Post findById(Long id) {
