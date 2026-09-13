@@ -49,12 +49,9 @@ class HomeControllerTest {
     }
 
     @Test
-    void popularDestinations_returns200_emptyList() throws Exception {
-        when(homeService.getPopularDestinations()).thenReturn(Collections.emptyList());
-
+    void popularDestinationsEndpointRemoved_returns404() throws Exception {
         mockMvc.perform(get("/api/home/popular-destinations"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(status().isNotFound());
     }
 
     @Test

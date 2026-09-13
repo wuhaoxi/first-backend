@@ -2,7 +2,6 @@ package com.first.app.controller;
 
 import com.first.app.dto.FeaturedGuideResponse;
 import com.first.app.dto.HotPostResponse;
-import com.first.app.dto.PopularCityResponse;
 import com.first.app.service.HomeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,11 +21,6 @@ public class HomeController {
     @GetMapping("/featured-guides")
     public ResponseEntity<List<FeaturedGuideResponse>> getFeaturedGuides() {
         return ResponseEntity.ok(homeService.getFeaturedGuides());
-    }
-
-    @GetMapping("/popular-destinations")
-    public ResponseEntity<List<PopularCityResponse>> getPopularDestinations() {
-        return ResponseEntity.ok(homeService.getPopularDestinations());
     }
 
     @GetMapping("/hot-posts")

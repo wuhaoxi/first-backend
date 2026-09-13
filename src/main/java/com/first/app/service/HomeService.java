@@ -2,7 +2,6 @@ package com.first.app.service;
 
 import com.first.app.dto.FeaturedGuideResponse;
 import com.first.app.dto.HotPostResponse;
-import com.first.app.dto.PopularCityResponse;
 import com.first.app.entity.Post;
 import com.first.app.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,10 +22,6 @@ public class HomeService {
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
     public List<FeaturedGuideResponse> getFeaturedGuides() {
-        return Collections.emptyList();
-    }
-
-    public List<PopularCityResponse> getPopularDestinations() {
         return Collections.emptyList();
     }
 
