@@ -15,4 +15,14 @@ class AttractionTest {
         assertThat(attraction.isBookingRequired()).isFalse();
         assertThat(attraction.getTags()).isEmpty();
     }
+
+    @Test
+    void shouldApplyGalleryAndRankingDefaults() {
+        Attraction attraction = new Attraction();
+
+        assertThat(attraction.getGallery()).isEmpty();
+        assertThat(attraction.getRatingScore()).isZero();
+        assertThat(attraction.getFavoriteCount()).isZero();
+        assertThat(attraction.getHeatScore()).isZero();
+    }
 }

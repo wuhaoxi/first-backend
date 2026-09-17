@@ -6,10 +6,14 @@ import com.first.app.dto.PostListResponse;
 import com.first.app.dto.PostSort;
 import com.first.app.dto.PostSummary;
 import com.first.app.dto.UpdatePostRequest;
+import com.first.app.entity.AttractionStatus;
 import com.first.app.entity.Post;
+import com.first.app.entity.PostAttraction;
 import com.first.app.entity.PostStatus;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
+import com.first.app.repository.AttractionRepository;
+import com.first.app.repository.PostAttractionRepository;
 import com.first.app.repository.PostRepository;
 import com.first.app.util.PostCursorCodec;
 import lombok.RequiredArgsConstructor;
@@ -18,12 +22,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +42,8 @@ public class PostService {
 
     private final PostRepository postRepository;
     private final PostStatsEnricher postStatsEnricher;
+    private final AttractionRepository attractionRepository;
+    private final PostAttractionRepository postAttractionRepository;
 
     @Value("${app.upload.dir:./uploads}")
     private String uploadDir;
@@ -47,10 +55,12 @@ public class PostService {
     private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
     private static final int MAX_CONTENT_BYTES = 60_000; // headroom under MySQL TEXT limit (65,535 bytes)
 
+    @Transactional
     public Post create(CreatePostRequest request, Long userId) {
         List<String> tags = sanitizeTags(request.getTags());
         validateTags(tags);
         validateContentLength(request.getContent());
+        List<Long> attractionIds = validateAttractionIds(request.getAttractionIds());
 
         PostStatus status = request.getStatus() != null ? request.getStatus() : PostStatus.DRAFT;
 
@@ -63,7 +73,9 @@ public class PostService {
                 .coverImage(request.getCoverImage())
                 .build();
 
-        return postRepository.save(post);
+        Post saved = postRepository.save(post);
+        saveAttractionLinks(saved.getId(), attractionIds);
+        return saved;
     }
 
     public List<Post> findPublishedList() {
@@ -172,8 +184,13 @@ public class PostService {
         return post;
     }
 
+    @Transactional
     public Post update(Long id, UpdatePostRequest request, Long userId) {
         Post post = getPostAsAuthor(id, userId);
+
+        List<Long> attractionIds = request.getAttractionIds() == null
+                ? null
+                : validateAttractionIds(request.getAttractionIds());
 
         if (request.getTitle() != null) {
             if (request.getTitle().isBlank()) {
@@ -200,11 +217,17 @@ public class PostService {
             post.setCoverImage(request.getCoverImage());
         }
 
-        return postRepository.save(post);
+        Post saved = postRepository.save(post);
+        if (attractionIds != null) {
+            replaceAttractionLinks(id, attractionIds);
+        }
+        return saved;
     }
 
+    @Transactional
     public void delete(Long id, Long userId) {
         Post post = getPostAsAuthor(id, userId);
+        postAttractionRepository.deleteByPostId(id);
         postRepository.delete(post);
     }
 
@@ -226,7 +249,9 @@ public class PostService {
 
         try {
             String extension = contentType.equals("image/jpeg") ? "jpg" : "png";
-            Path uploadPath = Paths.get(uploadDir, "posts", id.toString());
+            // Resolve to an absolute path: Tomcat's Part.write() resolves relative
+            // paths against its own temp dir, not the process working directory.
+            Path uploadPath = Paths.get(uploadDir, "posts", id.toString()).toAbsolutePath();
             Files.createDirectories(uploadPath);
 
             Path filePath = uploadPath.resolve("cover." + extension);
@@ -248,6 +273,39 @@ public class PostService {
             throw new InvalidRequestException("You can only edit your own posts");
         }
         return post;
+    }
+
+    private List<Long> validateAttractionIds(List<Long> attractionIds) {
+        if (attractionIds == null || attractionIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> deduplicated = attractionIds.stream().distinct().toList();
+        int publishedCount = attractionRepository
+                .findByIdInAndStatus(deduplicated, AttractionStatus.PUBLISHED)
+                .size();
+        if (publishedCount != deduplicated.size()) {
+            throw new InvalidRequestException("attractionIds must reference published attractions");
+        }
+        return deduplicated;
+    }
+
+    private void saveAttractionLinks(Long postId, List<Long> attractionIds) {
+        if (attractionIds.isEmpty()) {
+            return;
+        }
+        List<PostAttraction> links = new ArrayList<>();
+        for (Long attractionId : attractionIds) {
+            links.add(PostAttraction.builder()
+                    .postId(postId)
+                    .attractionId(attractionId)
+                    .build());
+        }
+        postAttractionRepository.saveAll(links);
+    }
+
+    private void replaceAttractionLinks(Long postId, List<Long> attractionIds) {
+        postAttractionRepository.deleteByPostId(postId);
+        saveAttractionLinks(postId, attractionIds);
     }
 
     private void validateContentLength(String content) {
@@ -275,6 +333,9 @@ public class PostService {
                 }
                 if (tag.length() > 50) {
                     throw new InvalidRequestException("each tag must not exceed 50 characters");
+                }
+                if (tag.contains(",")) {
+                    throw new InvalidRequestException("tags must not contain commas");
                 }
             }
         }

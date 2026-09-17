@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Seeds the attractions catalog for local development (dev profile only).
@@ -20,6 +21,9 @@ import java.util.List;
  *
  * <p>Insertion order matters: ids follow this order and the popular feed picks the top 6
  * by id descending, so the six homepage showcases MUST stay the final catalog entries.
+ *
+ * <p>Curated rankings ({@link #RANKINGS}) and imagery ({@link #IMAGES}) are keyed by slug and
+ * applied to every entry before {@code saveAll}; the six showcases own the six highest heat scores.
  */
 @Component
 @Profile("dev")
@@ -28,12 +32,198 @@ public class AttractionDevDataSeeder implements CommandLineRunner {
 
     private final AttractionRepository attractionRepository;
 
+    private static final Map<String, Ranking> RANKINGS = Map.ofEntries(
+            // --- City catalog ---
+            Map.entry("temple-of-heaven", new Ranking(4.6, 900, 88)),
+            Map.entry("summer-palace", new Ranking(4.7, 1100, 87)),
+            Map.entry("city-wall-xian", new Ranking(4.7, 1200, 86)),
+            Map.entry("big-wild-goose-pagoda", new Ranking(4.5, 640, 78)),
+            Map.entry("muslim-quarter", new Ranking(4.4, 950, 84)),
+            Map.entry("yu-garden", new Ranking(4.5, 880, 83)),
+            Map.entry("shanghai-museum", new Ranking(4.8, 1050, 85)),
+            Map.entry("tianzifang", new Ranking(4.3, 520, 74)),
+            Map.entry("wuhou-shrine", new Ranking(4.5, 610, 77)),
+            Map.entry("jinli-ancient-street", new Ranking(4.4, 730, 80)),
+            Map.entry("dujiangyan-irrigation", new Ranking(4.7, 590, 76)),
+            Map.entry("lingyin-temple", new Ranking(4.6, 810, 82)),
+            Map.entry("leifeng-pagoda", new Ranking(4.5, 700, 79)),
+            Map.entry("longjing-tea-village", new Ranking(4.6, 560, 75)),
+            Map.entry("li-river", new Ranking(4.9, 2400, 89)),
+            Map.entry("reed-flute-cave", new Ranking(4.4, 430, 71)),
+            Map.entry("elephant-trunk-hill", new Ranking(4.3, 380, 69)),
+            Map.entry("longji-rice-terraces", new Ranking(4.8, 890, 81)),
+            // --- Homepage showcases: MUST own the six highest heat scores ---
+            Map.entry("mutianyu-great-wall", new Ranking(4.9, 4200, 99)),
+            Map.entry("forbidden-city", new Ranking(4.9, 5100, 98)),
+            Map.entry("terracotta-army", new Ranking(4.8, 3900, 97)),
+            Map.entry("the-bund", new Ranking(4.6, 2800, 96)),
+            Map.entry("chengdu-panda-base", new Ranking(4.8, 3600, 95)),
+            Map.entry("west-lake", new Ranking(4.7, 3100, 94)));
+
+    private record Ranking(double ratingScore, int favoriteCount, int heatScore) {
+    }
+
+    /**
+     * Curated gallery images (slug → 3-4 stable Wikimedia Commons 960px thumbnails of the actual
+     * attraction; 960px is an allowed thumbnail bucket). The first entry of each gallery doubles as
+     * {@code coverImageUrl}.
+     */
+    private static final Map<String, List<String>> IMAGES = Map.ofEntries(
+            // --- City catalog ---
+            Map.entry("temple-of-heaven", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Temple_of_Heaven%2C_Beijing%2C_China_-_010_edit.jpg/960px-Temple_of_Heaven%2C_Beijing%2C_China_-_010_edit.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Temple_of_Heaven%2C_Beijing_-_February_2024.jpg/960px-Temple_of_Heaven%2C_Beijing_-_February_2024.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Temple_of_Heaven_-_Beijing_-_June_2012.jpg/960px-Temple_of_Heaven_-_Beijing_-_June_2012.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Beijing%2C_Tiantan%2C_Imperial_Vault_of_Heaven_WLF_2023.jpg/960px-Beijing%2C_Tiantan%2C_Imperial_Vault_of_Heaven_WLF_2023.jpg")),
+            Map.entry("summer-palace", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Longevity_Hill_of_the_Summer_Palace.jpg/960px-Longevity_Hill_of_the_Summer_Palace.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/20090530_Beijing_Summer_Palace_8467.jpg/960px-20090530_Beijing_Summer_Palace_8467.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Summer_Palace_-_Wenchang_Pavilion.jpg/960px-Summer_Palace_-_Wenchang_Pavilion.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/The_Summer_Palace_%E9%A0%A4%E5%92%8C%E5%9C%92%2C_Beijing%2C_China_%2838171942106%29.jpg/960px-The_Summer_Palace_%E9%A0%A4%E5%92%8C%E5%9C%92%2C_Beijing%2C_China_%2838171942106%29.jpg")),
+            Map.entry("city-wall-xian", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Xi%27an_city_walls_%2889479%29.jpg/960px-Xi%27an_city_walls_%2889479%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/32/City_wall_of_Xi%27an_51550-Xian_%2827959363326%29.jpg/960px-City_wall_of_Xi%27an_51550-Xian_%2827959363326%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Xi%27an_city_walls.jpg/960px-Xi%27an_city_walls.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Xi%27an_city_walls_%2859626%29.jpg/960px-Xi%27an_city_walls_%2859626%29.jpg")),
+            Map.entry("big-wild-goose-pagoda", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Giant_Wild_Goose_Pagoda%2C_Xi%27an%2C_May%2C_2018-1.jpg/960px-Giant_Wild_Goose_Pagoda%2C_Xi%27an%2C_May%2C_2018-1.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Giant_Wild_Goose_Pagoda.jpg/960px-Giant_Wild_Goose_Pagoda.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Giant_Wild_Goose_Pagoda_20240806_02.jpg/960px-Giant_Wild_Goose_Pagoda_20240806_02.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Giant_Wild_Goose_Pagoda_20240806_04.jpg/960px-Giant_Wild_Goose_Pagoda_20240806_04.jpg")),
+            Map.entry("muslim-quarter", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/76/Xi%27an_Muslim_Quarter.jpg/960px-Xi%27an_Muslim_Quarter.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c4/Muslim_Quarter_Xi%27an_China.jpg/960px-Muslim_Quarter_Xi%27an_China.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fc/Muslim_Quarter_in_Xi%27an_%2848785759581%29.jpg/960px-Muslim_Quarter_in_Xi%27an_%2848785759581%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/1_xian_muslim_quarter_china_2011.JPG/960px-1_xian_muslim_quarter_china_2011.JPG")),
+            Map.entry("yu-garden", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/Shanghai_-_Yu_Garden_-_0035.jpg/960px-Shanghai_-_Yu_Garden_-_0035.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Shanghai_-_Yu_Garden_-_0034.jpg/960px-Shanghai_-_Yu_Garden_-_0034.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Yu_Garden_Shanghai_November_2017_003.jpg/960px-Yu_Garden_Shanghai_November_2017_003.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Yu_Garden_Shanghai_November_2017_002.jpg/960px-Yu_Garden_Shanghai_November_2017_002.jpg")),
+            Map.entry("shanghai-museum", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/The_shanghai_museum.jpg/960px-The_shanghai_museum.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Shanghai_East_Museum_-_54128313357.jpg/960px-Shanghai_East_Museum_-_54128313357.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/74/Shanghai_East_Museum_-_54133541419.jpg/960px-Shanghai_East_Museum_-_54133541419.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Shanghai_East_Museum_-_54129151186.jpg/960px-Shanghai_East_Museum_-_54129151186.jpg")),
+            Map.entry("tianzifang", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Tianzifang%2C_Shanghai.jpg/960px-Tianzifang%2C_Shanghai.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/Tianzifangbyday.jpg/960px-Tianzifangbyday.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Tianzifang_21669-Shanghai_%2833070816285%29.jpg/960px-Tianzifang_21669-Shanghai_%2833070816285%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Tianzifang_21641-Shanghai_%2833029166756%29.jpg/960px-Tianzifang_21641-Shanghai_%2833029166756%29.jpg")),
+            Map.entry("wuhou-shrine", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ef/Wuhou_Shrine_20260513.jpg/960px-Wuhou_Shrine_20260513.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Wuhou_Shrine_-_Chengdu%2C_China_-_DSC05476.jpg/960px-Wuhou_Shrine_-_Chengdu%2C_China_-_DSC05476.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Penjing_garden_-_Wuhou_Shrine_-_Chengdu%2C_China_-_DSC05432.jpg/960px-Penjing_garden_-_Wuhou_Shrine_-_Chengdu%2C_China_-_DSC05432.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Pavilion_-_Wuhou_Shrine_-_Chengdu%2C_China_-_DSC05444.jpg/960px-Pavilion_-_Wuhou_Shrine_-_Chengdu%2C_China_-_DSC05444.jpg")),
+            Map.entry("jinli-ancient-street", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Chengdu_Jinli-Stra%C3%9Fe_11.jpg/960px-Chengdu_Jinli-Stra%C3%9Fe_11.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Chengdu_Jinli-Stra%C3%9Fe_09.jpg/960px-Chengdu_Jinli-Stra%C3%9Fe_09.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Jinli_Street_-_Chengdu%2C_China_-_DSC05404.jpg/960px-Jinli_Street_-_Chengdu%2C_China_-_DSC05404.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Chengdu_Jinli-Stra%C3%9Fe_bei_Nacht_19.jpg/960px-Chengdu_Jinli-Stra%C3%9Fe_bei_Nacht_19.jpg")),
+            Map.entry("dujiangyan-irrigation", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Dujiang_Weir.jpg/960px-Dujiang_Weir.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Dujiangyan_Irrigation_System_%2850620354352%29.jpg/960px-Dujiangyan_Irrigation_System_%2850620354352%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Dujiangyan_Irrigation_System_%2850619502518%29.jpg/960px-Dujiangyan_Irrigation_System_%2850619502518%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Dujiangyan_Irrigation_System_%2850619502968%29.jpg/960px-Dujiangyan_Irrigation_System_%2850619502968%29.jpg")),
+            Map.entry("lingyin-temple", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Lingyin_Temple%2C_Hangzhou_20161003.jpg/960px-Lingyin_Temple%2C_Hangzhou_20161003.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Lingyin_Temple_in_Hangzhou.jpg/960px-Lingyin_Temple_in_Hangzhou.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Hangzhou_Lingyin-Temple_20161003.jpg/960px-Hangzhou_Lingyin-Temple_20161003.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/20260423_Stone_Pagodas_of_Lingyin_Temple_01.jpg/960px-20260423_Stone_Pagodas_of_Lingyin_Temple_01.jpg")),
+            Map.entry("leifeng-pagoda", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Leifeng_Pagoda_%E9%9B%B7%E5%B3%B0%E5%A1%94_-_panoramio.jpg/960px-Leifeng_Pagoda_%E9%9B%B7%E5%B3%B0%E5%A1%94_-_panoramio.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Leifeng_Pagoda_20191102.jpg/960px-Leifeng_Pagoda_20191102.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c4/Leifeng_Pagoda_20240729_103559.jpg/960px-Leifeng_Pagoda_20240729_103559.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Leifeng_Pagoda_at_Dusk.jpg/960px-Leifeng_Pagoda_at_Dusk.jpg")),
+            Map.entry("longjing-tea-village", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/Longjing_villiage.jpg/960px-Longjing_villiage.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Longjing_Tea_field%2C_Dragon_Well_area%2C_Meijiawu_China.jpg/960px-Longjing_Tea_field%2C_Dragon_Well_area%2C_Meijiawu_China.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Tea_field_%26_tea_farm_houses_in_Hangzhou.JPG/960px-Tea_field_%26_tea_farm_houses_in_Hangzhou.JPG",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Tea-grower-hangzhou.jpg/960px-Tea-grower-hangzhou.jpg")),
+            Map.entry("li-river", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/1_li_jiang_guilin_yangshuo_2011.jpg/960px-1_li_jiang_guilin_yangshuo_2011.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Li_River_cruise_from_Guilin_to_Yangshuo.JPG/960px-Li_River_cruise_from_Guilin_to_Yangshuo.JPG",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c6/Guilin_li_river.jpg/960px-Guilin_li_river.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Yangshuo-Li-River-2019-Luka-Peternel.jpg/960px-Yangshuo-Li-River-2019-Luka-Peternel.jpg")),
+            Map.entry("reed-flute-cave", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Reed_Flute_Cave_89145-Guilin_%2830047619307%29.jpg/960px-Reed_Flute_Cave_89145-Guilin_%2830047619307%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Reed_Flute_Cave_89009-Guilin_%2843171728970%29.jpg/960px-Reed_Flute_Cave_89009-Guilin_%2843171728970%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/39/Reed_Flute_Cave_89017-Guilin_%2844934927312%29.jpg/960px-Reed_Flute_Cave_89017-Guilin_%2844934927312%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b9/Reed_Flute_Cave_89020-Guilin_%2843171737050%29.jpg/960px-Reed_Flute_Cave_89020-Guilin_%2843171737050%29.jpg")),
+            Map.entry("elephant-trunk-hill", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/Elephant_Trunk_Hill%2C_Guilin.jpg/960px-Elephant_Trunk_Hill%2C_Guilin.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Guilin_Elephant_Hill_at_night_%2820240217201207%29.jpg/960px-Guilin_Elephant_Hill_at_night_%2820240217201207%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/View_of_Guilin_from_Elephant_Trunk_Hill_%28cropped%29.jpg/960px-View_of_Guilin_from_Elephant_Trunk_Hill_%28cropped%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/View_of_Guilin_from_Elephant_Trunk_Hill.jpg/960px-View_of_Guilin_from_Elephant_Trunk_Hill.jpg")),
+            Map.entry("longji-rice-terraces", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Longji_Rice_Terraces_004.jpg/960px-Longji_Rice_Terraces_004.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Longji_Rice_Terraces_002.jpg/960px-Longji_Rice_Terraces_002.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Longji_Rice_Terraces_005.jpg/960px-Longji_Rice_Terraces_005.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/Longji_rice_terraces_-_2023_10_11_Kaur_Virunurm.jpg/960px-Longji_rice_terraces_-_2023_10_11_Kaur_Virunurm.jpg")),
+            // --- Homepage showcases: MUST own the six highest heat scores ---
+            Map.entry("mutianyu-great-wall", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/The_Mutianyu_section_of_the_Great_Wall_of_China.jpg/960px-The_Mutianyu_section_of_the_Great_Wall_of_China.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Mutianyu_Great_Wall_%286222519140%29.jpg/960px-Mutianyu_Great_Wall_%286222519140%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Great_wall_of_china-mutianyu_4.JPG/960px-Great_wall_of_china-mutianyu_4.JPG",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/66954-The-Great-Wall%2C_Mutianyu.jpg/960px-66954-The-Great-Wall%2C_Mutianyu.jpg")),
+            Map.entry("forbidden-city", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ef/The_Forbidden_City_-_View_from_Coal_Hill.jpg/960px-The_Forbidden_City_-_View_from_Coal_Hill.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Beijing_Forbidden_City_Hall_of_Central_Harmony_terraces-20071018-RM-143736.jpg/960px-Beijing_Forbidden_City_Hall_of_Central_Harmony_terraces-20071018-RM-143736.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Beijing_China_Forbidden-City-03.jpg/960px-Beijing_China_Forbidden-City-03.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Beijing_China_Forbidden-City-04.jpg/960px-Beijing_China_Forbidden-City-04.jpg")),
+            Map.entry("terracotta-army", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/51714-Terracota-Army.jpg/960px-51714-Terracota-Army.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Qin_Shihuang_Terracotta_Army%2C_Pit_1.jpg/960px-Qin_Shihuang_Terracotta_Army%2C_Pit_1.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Terracotta_Army%2C_View_of_Pit_1.jpg/960px-Terracotta_Army%2C_View_of_Pit_1.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/41/Terracotta_army.jpg/960px-Terracotta_army.jpg")),
+            Map.entry("the-bund", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Blue_hour_view_of_the_Bund_from_the_Shanghai_World_Financial_Center_dllu.jpg/960px-Blue_hour_view_of_the_Bund_from_the_Shanghai_World_Financial_Center_dllu.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/Pudong_Shanghai_November_2017_panorama.jpg/960px-Pudong_Shanghai_November_2017_panorama.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/The_Bund%2C_Shanghai_at_night.jpg/960px-The_Bund%2C_Shanghai_at_night.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Sunset_at_the_Bund%2C_Shanghai_2019.jpg/960px-Sunset_at_the_Bund%2C_Shanghai_2019.jpg")),
+            Map.entry("chengdu-panda-base", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/Chengdu-pandas-d10.jpg/960px-Chengdu-pandas-d10.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Chengdu_Sichuan_China_Panda-breeding-and-research-center-01.jpg/960px-Chengdu_Sichuan_China_Panda-breeding-and-research-center-01.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Chengdu_Research_Base_of_Giant_Panda_Breeding%2C_201907%2C_01.jpg/960px-Chengdu_Research_Base_of_Giant_Panda_Breeding%2C_201907%2C_01.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Panda_in_Chengdu_Research_Base_of_Giant_Panda_Breeding_-_7708872342.jpg/960px-Panda_in_Chengdu_Research_Base_of_Giant_Panda_Breeding_-_7708872342.jpg")),
+            Map.entry("west-lake", List.of(
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ed/20260424_West_Lake_and_Hangzhou_Skyline.jpg/960px-20260424_West_Lake_and_Hangzhou_Skyline.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/2/22/West_Lake%2C_Hangzhou_%28Wanzi_Pavilion%29.jpg/960px-West_Lake%2C_Hangzhou_%28Wanzi_Pavilion%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/West_Lake%2C_Hangzhou_%28Nine-turn_bridge%29.jpg/960px-West_Lake%2C_Hangzhou_%28Nine-turn_bridge%29.jpg",
+                    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/20090524_Hangzhou_West_Lake_7531.jpg/960px-20090524_Hangzhou_West_Lake_7531.jpg")));
+
     @Override
     public void run(String... args) {
         if (attractionRepository.count() > 0) {
             return;
         }
-        attractionRepository.saveAll(catalog());
+        List<Attraction> attractions = catalog();
+        applyRankings(attractions);
+        applyImages(attractions);
+        attractionRepository.saveAll(attractions);
+    }
+
+    private void applyRankings(List<Attraction> attractions) {
+        for (Attraction attraction : attractions) {
+            Ranking ranking = RANKINGS.get(attraction.getSlug());
+            if (ranking == null) {
+                throw new IllegalStateException("Missing curated ranking for slug: " + attraction.getSlug());
+            }
+            attraction.setRatingScore(ranking.ratingScore());
+            attraction.setFavoriteCount(ranking.favoriteCount());
+            attraction.setHeatScore(ranking.heatScore());
+        }
+    }
+
+    private void applyImages(List<Attraction> attractions) {
+        for (Attraction attraction : attractions) {
+            List<String> images = IMAGES.get(attraction.getSlug());
+            if (images == null) {
+                throw new IllegalStateException("Missing curated imagery for slug: " + attraction.getSlug());
+            }
+            attraction.setGallery(images);
+            attraction.setCoverImageUrl(images.get(0));
+        }
     }
 
     private List<Attraction> catalog() {

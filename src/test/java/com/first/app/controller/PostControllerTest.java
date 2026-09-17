@@ -3,6 +3,7 @@ package com.first.app.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.first.app.dto.CreatePostRequest;
 import com.first.app.dto.ImageUploadResponse;
+import com.first.app.dto.LinkedAttractionResponse;
 import com.first.app.dto.PostListResponse;
 import com.first.app.dto.PostResponse;
 import com.first.app.dto.PostSummary;
@@ -17,8 +18,10 @@ import com.first.app.security.JwtService;
 import com.first.app.security.StateCheckFilter;
 import com.first.app.repository.BookmarkRepository;
 import com.first.app.repository.UserRepository;
+import com.first.app.service.PostAttractionEnricher;
 import com.first.app.service.PostService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -33,11 +36,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -55,6 +60,9 @@ class PostControllerTest {
 
     @MockBean
     private PostService postService;
+
+    @MockBean
+    private PostAttractionEnricher postAttractionEnricher;
 
     @MockBean
     private BookmarkRepository bookmarkRepository;
@@ -461,5 +469,89 @@ class PostControllerTest {
 
         mockMvc.perform(multipart("/api/posts/1/image").file(file))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void create_forwardsAttractionIds_andReturnsEnrichedResponse() throws Exception {
+        CreatePostRequest req = new CreatePostRequest();
+        req.setTitle("Linked");
+        req.setContent("# Hello");
+        req.setAttractionIds(List.of(5L, 2L));
+
+        Post post = buildPost(1L, PostStatus.DRAFT, 1L);
+        when(postService.create(any(CreatePostRequest.class), anyLong())).thenReturn(post);
+        doAnswer(invocation -> {
+            PostResponse response = invocation.getArgument(0);
+            response.setAttractions(List.of(LinkedAttractionResponse.builder()
+                    .id(5L).slug("forbidden-city").name("Forbidden City").nameZh("故宫")
+                    .build()));
+            return null;
+        }).when(postAttractionEnricher).enrich(any(PostResponse.class));
+
+        mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req))
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.attractions.length()").value(1))
+                .andExpect(jsonPath("$.attractions[0].id").value(5))
+                .andExpect(jsonPath("$.attractions[0].slug").value("forbidden-city"))
+                .andExpect(jsonPath("$.attractions[0].nameZh").value("故宫"));
+
+        ArgumentCaptor<CreatePostRequest> captor = ArgumentCaptor.forClass(CreatePostRequest.class);
+        verify(postService).create(captor.capture(), eq(1L));
+        assertThat(captor.getValue().getAttractionIds()).containsExactly(5L, 2L);
+        verify(postAttractionEnricher).enrich(any(PostResponse.class));
+    }
+
+    @Test
+    void update_forwardsAttractionIds_andReturnsEnrichedResponse() throws Exception {
+        UpdatePostRequest req = new UpdatePostRequest();
+        req.setAttractionIds(List.of(9L));
+
+        Post post = buildPost(1L, PostStatus.PUBLISHED, 1L);
+        when(postService.update(eq(1L), any(UpdatePostRequest.class), eq(1L))).thenReturn(post);
+        doAnswer(invocation -> {
+            PostResponse response = invocation.getArgument(0);
+            response.setAttractions(List.of(LinkedAttractionResponse.builder()
+                    .id(9L).slug("great-wall").name("Great Wall").nameZh("长城")
+                    .build()));
+            return null;
+        }).when(postAttractionEnricher).enrich(any(PostResponse.class));
+
+        mockMvc.perform(put("/api/posts/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req))
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attractions.length()").value(1))
+                .andExpect(jsonPath("$.attractions[0].id").value(9))
+                .andExpect(jsonPath("$.attractions[0].slug").value("great-wall"));
+
+        ArgumentCaptor<UpdatePostRequest> captor = ArgumentCaptor.forClass(UpdatePostRequest.class);
+        verify(postService).update(eq(1L), captor.capture(), eq(1L));
+        assertThat(captor.getValue().getAttractionIds()).containsExactly(9L);
+        verify(postAttractionEnricher).enrich(any(PostResponse.class));
+    }
+
+    @Test
+    void findById_returnsLinkedAttractions() throws Exception {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, 1L);
+        when(postService.findByIdPublic(1L)).thenReturn(post);
+        doAnswer(invocation -> {
+            PostResponse response = invocation.getArgument(0);
+            response.setAttractions(List.of(LinkedAttractionResponse.builder()
+                    .id(7L).slug("west-lake").name("West Lake").nameZh("西湖")
+                    .build()));
+            return null;
+        }).when(postAttractionEnricher).enrich(any(PostResponse.class));
+
+        mockMvc.perform(get("/api/posts/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attractions.length()").value(1))
+                .andExpect(jsonPath("$.attractions[0].id").value(7))
+                .andExpect(jsonPath("$.attractions[0].nameZh").value("西湖"));
+
+        verify(postAttractionEnricher).enrich(any(PostResponse.class));
     }
 }

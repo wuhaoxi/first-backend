@@ -5,10 +5,16 @@ import com.first.app.dto.ImageUploadResponse;
 import com.first.app.dto.PostListResponse;
 import com.first.app.dto.PostSummary;
 import com.first.app.dto.UpdatePostRequest;
+import com.first.app.entity.Attraction;
+import com.first.app.entity.AttractionCategory;
+import com.first.app.entity.AttractionStatus;
 import com.first.app.entity.Post;
+import com.first.app.entity.PostAttraction;
 import com.first.app.entity.PostStatus;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
+import com.first.app.repository.AttractionRepository;
+import com.first.app.repository.PostAttractionRepository;
 import com.first.app.repository.PostRepository;
 import com.first.app.util.PostCursorCodec;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -24,9 +31,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.LongStream;
@@ -45,6 +55,12 @@ class PostServiceTest {
 
     @Mock
     private PostStatsEnricher postStatsEnricher;
+
+    @Mock
+    private PostAttractionRepository postAttractionRepository;
+
+    @Mock
+    private AttractionRepository attractionRepository;
 
     @InjectMocks
     private PostService postService;
@@ -76,6 +92,22 @@ class PostServiceTest {
                 .status(PostStatus.PUBLISHED).authorId(AUTHOR_ID)
                 .commentCount(commentCount)
                 .build();
+    }
+
+    private Attraction buildAttraction(Long id) {
+        Attraction attraction = Attraction.builder()
+                .slug("attraction-" + id)
+                .name("Attraction " + id)
+                .nameZh("景点" + id)
+                .category(AttractionCategory.MUSEUM)
+                .city("Beijing")
+                .citySlug("beijing")
+                .summary("Summary of attraction " + id)
+                .description("Description of attraction " + id)
+                .status(AttractionStatus.PUBLISHED)
+                .build();
+        attraction.setId(id);
+        return attraction;
     }
 
     private List<Post> buildPublishedPosts(int count, long topId, LocalDateTime topTime) {
@@ -140,6 +172,76 @@ class PostServiceTest {
         assertThatThrownBy(() -> postService.create(request, AUTHOR_ID))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("content");
+    }
+
+    @Test
+    void create_withAttractionIds_persistsLinksInOrderViaSingleSaveAll() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setTitle("Linked");
+        request.setContent("content");
+        request.setAttractionIds(List.of(5L, 2L));
+        when(postRepository.save(any(Post.class))).thenAnswer(inv -> {
+            Post p = inv.getArgument(0);
+            p.setId(10L);
+            return p;
+        });
+        when(attractionRepository.findByIdInAndStatus(any(), eq(AttractionStatus.PUBLISHED)))
+                .thenReturn(List.of(buildAttraction(5L), buildAttraction(2L)));
+
+        postService.create(request, AUTHOR_ID);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PostAttraction>> captor = ArgumentCaptor.forClass(List.class);
+        verify(postAttractionRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(PostAttraction::getAttractionId)
+                .containsExactly(5L, 2L);
+        assertThat(captor.getValue()).allSatisfy(
+                link -> assertThat(link.getPostId()).isEqualTo(10L));
+    }
+
+    @Test
+    void create_withUnknownOrDraftAttractionId_throwsBadRequestAndSavesNothing() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setTitle("Bad Link");
+        request.setContent("content");
+        request.setAttractionIds(List.of(5L, 999L));
+        when(attractionRepository.findByIdInAndStatus(any(), eq(AttractionStatus.PUBLISHED)))
+                .thenReturn(List.of(buildAttraction(5L)));
+
+        assertThatThrownBy(() -> postService.create(request, AUTHOR_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("attractionIds must reference published attractions");
+
+        verify(postRepository, never()).save(any(Post.class));
+        verify(postAttractionRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void create_withDuplicateAttractionIds_deduplicatesPreservingOrder() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setTitle("Dup");
+        request.setContent("content");
+        request.setAttractionIds(List.of(5L, 5L, 2L));
+        when(postRepository.save(any(Post.class))).thenAnswer(inv -> {
+            Post p = inv.getArgument(0);
+            p.setId(10L);
+            return p;
+        });
+        when(attractionRepository.findByIdInAndStatus(any(), eq(AttractionStatus.PUBLISHED)))
+                .thenReturn(List.of(buildAttraction(5L), buildAttraction(2L)));
+
+        postService.create(request, AUTHOR_ID);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<Long>> idsCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(attractionRepository).findByIdInAndStatus(idsCaptor.capture(), eq(AttractionStatus.PUBLISHED));
+        assertThat(idsCaptor.getValue()).containsExactly(5L, 2L);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PostAttraction>> linksCaptor = ArgumentCaptor.forClass(List.class);
+        verify(postAttractionRepository).saveAll(linksCaptor.capture());
+        assertThat(linksCaptor.getValue()).extracting(PostAttraction::getAttractionId)
+                .containsExactly(5L, 2L);
     }
 
     @Test
@@ -254,6 +356,85 @@ class PostServiceTest {
     }
 
     @Test
+    void delete_removesAttractionLinks() {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+
+        postService.delete(1L, AUTHOR_ID);
+
+        verify(postRepository).delete(post);
+        verify(postAttractionRepository).deleteByPostId(1L);
+    }
+
+    @Test
+    void update_withoutAttractionIdsField_keepsLinksUntouched() {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.save(any(Post.class))).thenReturn(post);
+        UpdatePostRequest request = new UpdatePostRequest();
+        request.setTitle("New title");
+
+        postService.update(1L, request, AUTHOR_ID);
+
+        verifyNoInteractions(postAttractionRepository);
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void update_withEmptyAttractionIds_clearsAllLinks() {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.save(any(Post.class))).thenReturn(post);
+        UpdatePostRequest request = new UpdatePostRequest();
+        request.setAttractionIds(List.of());
+
+        postService.update(1L, request, AUTHOR_ID);
+
+        verify(postAttractionRepository).deleteByPostId(1L);
+        verify(postAttractionRepository, never()).saveAll(any());
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void update_withNewAttractionIds_replacesLinksAfterDelete() {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.save(any(Post.class))).thenReturn(post);
+        when(attractionRepository.findByIdInAndStatus(any(), eq(AttractionStatus.PUBLISHED)))
+                .thenReturn(List.of(buildAttraction(9L)));
+        UpdatePostRequest request = new UpdatePostRequest();
+        request.setAttractionIds(List.of(9L));
+
+        postService.update(1L, request, AUTHOR_ID);
+
+        InOrder inOrder = inOrder(postAttractionRepository);
+        inOrder.verify(postAttractionRepository).deleteByPostId(1L);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PostAttraction>> captor = ArgumentCaptor.forClass(List.class);
+        inOrder.verify(postAttractionRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(PostAttraction::getAttractionId)
+                .containsExactly(9L);
+    }
+
+    @Test
+    void update_withInvalidAttractionIds_modifiesNothing() {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(attractionRepository.findByIdInAndStatus(any(), eq(AttractionStatus.PUBLISHED)))
+                .thenReturn(List.of());
+        UpdatePostRequest request = new UpdatePostRequest();
+        request.setTitle("New title");
+        request.setAttractionIds(List.of(9L));
+
+        assertThatThrownBy(() -> postService.update(1L, request, AUTHOR_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessage("attractionIds must reference published attractions");
+
+        verify(postRepository, never()).save(any(Post.class));
+        verifyNoInteractions(postAttractionRepository);
+    }
+
+    @Test
     void shouldAllowStatusChangeInUpdate() {
         Post post = buildPost(1L, PostStatus.DRAFT, AUTHOR_ID);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
@@ -297,6 +478,53 @@ class PostServiceTest {
         Post result = postService.create(request, AUTHOR_ID);
 
         assertThat(result.getTags()).containsExactly("tag1", "tag2");
+    }
+
+    @Test
+    void shouldRejectTagContainingComma() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setTitle("Tagged");
+        request.setContent("# Tags");
+        request.setTags(List.of("travel,guide"));
+
+        assertThatThrownBy(() -> postService.create(request, AUTHOR_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("tags must not contain commas");
+    }
+
+    @Test
+    void shouldRejectTagContainingCommaOnUpdate() {
+        Post post = buildPost(1L, PostStatus.DRAFT, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+
+        UpdatePostRequest request = new UpdatePostRequest();
+        request.setTags(List.of("travel,guide"));
+
+        assertThatThrownBy(() -> postService.update(1L, request, AUTHOR_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("tags must not contain commas");
+    }
+
+    @Test
+    void shouldResolveUploadTargetToAbsolutePath() throws Exception {
+        // Tomcat's Part.write() resolves relative paths against the container temp dir,
+        // so the transfer target must be absolute regardless of the configured uploadDir.
+        ReflectionTestUtils.setField(postService, "uploadDir", "./target/rel-upload-test");
+
+        Post post = buildPost(1L, PostStatus.DRAFT, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.save(any(Post.class))).thenReturn(post);
+
+        MultipartFile file = spy(new MockMultipartFile(
+                "file", "cover.jpg", "image/jpeg", "fake-image-data".getBytes()));
+        doNothing().when(file).transferTo(any(File.class));
+
+        ImageUploadResponse response = postService.uploadImage(1L, file, AUTHOR_ID);
+
+        ArgumentCaptor<File> captor = ArgumentCaptor.forClass(File.class);
+        verify(file).transferTo(captor.capture());
+        assertThat(captor.getValue().isAbsolute()).isTrue();
+        assertThat(response.getUrl()).isEqualTo("/api/uploads/posts/1/cover.jpg");
     }
 
     @Test

@@ -1,10 +1,14 @@
 package com.first.app.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.first.app.dto.ErrorResponse;
 import com.first.app.security.JwtAuthFilter;
 import com.first.app.security.StateCheckFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.http.HttpMethod;
@@ -24,12 +28,23 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final StateCheckFilter stateCheckFilter;
+    private final ObjectMapper objectMapper;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Unauthenticated access to protected endpoints returns 401 (not the
+                // Spring Security default 403) with the standard ErrorResponse body —
+                // the contract asserted by the living specs and the controllers' tests.
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            objectMapper.writeValue(response.getOutputStream(),
+                                    ErrorResponse.of("Authentication required", 401));
+                        }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
@@ -38,6 +53,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/comments/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/home/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/attractions/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/attraction-comments/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/cities/**").permitAll()
                         .requestMatchers("/api/uploads/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()

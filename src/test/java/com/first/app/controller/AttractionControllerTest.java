@@ -9,6 +9,7 @@ import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.security.JwtAuthFilter;
 import com.first.app.security.JwtService;
 import com.first.app.security.StateCheckFilter;
+import com.first.app.service.AttractionInteractionEnricher;
 import com.first.app.service.AttractionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -36,6 +38,9 @@ class AttractionControllerTest {
 
     @MockBean
     private AttractionService attractionService;
+
+    @MockBean
+    private AttractionInteractionEnricher attractionInteractionEnricher;
 
     @MockBean
     private JwtService jwtService;
@@ -62,7 +67,7 @@ class AttractionControllerTest {
                 .bookingRequired(true)
                 .createdAt(LocalDateTime.of(2026, 1, 1, 10, 0))
                 .build();
-        when(attractionService.list(null, null, 0, 20))
+        when(attractionService.list(null, null, null, 0, 20))
                 .thenReturn(new PageResponse<>(List.of(item), 0, 20, 1, 1));
 
         mockMvc.perform(get("/api/attractions"))
@@ -81,18 +86,18 @@ class AttractionControllerTest {
 
     @Test
     void list_forwardsFilterAndPaginationParameters() throws Exception {
-        when(attractionService.list("beijing", "TEMPLE", 1, 10))
+        when(attractionService.list("beijing", "TEMPLE", null, 1, 10))
                 .thenReturn(new PageResponse<>(List.of(), 1, 10, 0, 0));
 
         mockMvc.perform(get("/api/attractions?city=beijing&category=TEMPLE&page=1&size=10"))
                 .andExpect(status().isOk());
 
-        verify(attractionService).list("beijing", "TEMPLE", 1, 10);
+        verify(attractionService).list("beijing", "TEMPLE", null, 1, 10);
     }
 
     @Test
     void list_invalidParameters_return400ErrorBody() throws Exception {
-        when(attractionService.list(null, null, -1, 20))
+        when(attractionService.list(null, null, null, -1, 20))
                 .thenThrow(new InvalidRequestException("page must not be negative"));
         mockMvc.perform(get("/api/attractions?page=-1"))
                 .andExpect(status().isBadRequest())
@@ -100,18 +105,18 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.timestamp").exists());
 
-        when(attractionService.list(null, null, 0, 0))
+        when(attractionService.list(null, null, null, 0, 0))
                 .thenThrow(new InvalidRequestException("size must be between 1 and 100"));
         mockMvc.perform(get("/api/attractions?size=0"))
                 .andExpect(status().isBadRequest());
 
-        when(attractionService.list(null, null, 0, 101))
+        when(attractionService.list(null, null, null, 0, 101))
                 .thenThrow(new InvalidRequestException("size must be between 1 and 100"));
         mockMvc.perform(get("/api/attractions?size=101"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
 
-        when(attractionService.list(null, "BOGUS", 0, 20))
+        when(attractionService.list(null, "BOGUS", null, 0, 20))
                 .thenThrow(new InvalidRequestException("Invalid category: BOGUS"));
         mockMvc.perform(get("/api/attractions?category=BOGUS"))
                 .andExpect(status().isBadRequest())
@@ -215,5 +220,63 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.message").value("Attraction not found: no-such-place"))
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void list_sortParam_isForwardedToService() throws Exception {
+        when(attractionService.list(null, null, "rating", 0, 20))
+                .thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/api/attractions?sort=rating"))
+                .andExpect(status().isOk());
+
+        verify(attractionService).list(null, null, "rating", 0, 20);
+    }
+
+    @Test
+    void list_invalidSort_returns400ErrorBody() throws Exception {
+        when(attractionService.list(null, null, "trending", 0, 20))
+                .thenThrow(new InvalidRequestException("Invalid sort: trending"));
+
+        mockMvc.perform(get("/api/attractions?sort=trending"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid sort: trending"))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    @Test
+    void detail_anonymous_leavesFavoritedNull() throws Exception {
+        AttractionResponse detail = AttractionResponse.builder()
+                .id(1L).slug("forbidden-city").favoriteCount(6200)
+                .build();
+        when(attractionService.getBySlug("forbidden-city")).thenReturn(detail);
+
+        mockMvc.perform(get("/api/attractions/forbidden-city"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.favorited").doesNotExist());
+
+        verify(attractionInteractionEnricher).enrich(detail, null);
+    }
+
+    @Test
+    void detail_authenticated_forwardsUserIdAndEnrichedFields() throws Exception {
+        AttractionResponse detail = AttractionResponse.builder()
+                .id(1L).slug("forbidden-city").favoriteCount(6200)
+                .build();
+        when(attractionService.getBySlug("forbidden-city")).thenReturn(detail);
+        doAnswer(inv -> {
+            AttractionResponse response = inv.getArgument(0);
+            response.setCommentCount(5);
+            response.setFavoriteCount(6202);
+            response.setFavorited(true);
+            return null;
+        }).when(attractionInteractionEnricher).enrich(detail, 1L);
+
+        mockMvc.perform(get("/api/attractions/forbidden-city").requestAttr("userId", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.commentCount").value(5))
+                .andExpect(jsonPath("$.favoriteCount").value(6202))
+                .andExpect(jsonPath("$.favorited").value(true));
     }
 }

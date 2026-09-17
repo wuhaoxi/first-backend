@@ -3,7 +3,9 @@ package com.first.app.controller;
 import com.first.app.dto.AttractionResponse;
 import com.first.app.dto.AttractionSummaryResponse;
 import com.first.app.dto.PageResponse;
+import com.first.app.service.AttractionInteractionEnricher;
 import com.first.app.service.AttractionService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,14 +22,16 @@ import java.util.List;
 public class AttractionController {
 
     private final AttractionService attractionService;
+    private final AttractionInteractionEnricher attractionInteractionEnricher;
 
     @GetMapping
     public ResponseEntity<PageResponse<AttractionSummaryResponse>> list(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(attractionService.list(city, category, page, size));
+        return ResponseEntity.ok(attractionService.list(city, category, sort, page, size));
     }
 
     @GetMapping("/popular")
@@ -37,7 +41,11 @@ public class AttractionController {
     }
 
     @GetMapping("/{slug}")
-    public ResponseEntity<AttractionResponse> detail(@PathVariable String slug) {
-        return ResponseEntity.ok(attractionService.getBySlug(slug));
+    public ResponseEntity<AttractionResponse> detail(@PathVariable String slug,
+                                                     HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        AttractionResponse response = attractionService.getBySlug(slug);
+        attractionInteractionEnricher.enrich(response, userId);
+        return ResponseEntity.ok(response);
     }
 }

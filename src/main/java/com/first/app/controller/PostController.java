@@ -7,6 +7,7 @@ import com.first.app.dto.PostResponse;
 import com.first.app.dto.UpdatePostRequest;
 import com.first.app.entity.Post;
 import com.first.app.repository.BookmarkRepository;
+import com.first.app.service.PostAttractionEnricher;
 import com.first.app.service.PostService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -23,6 +24,7 @@ public class PostController {
 
     private final PostService postService;
     private final BookmarkRepository bookmarkRepository;
+    private final PostAttractionEnricher postAttractionEnricher;
 
     @PostMapping
     public ResponseEntity<PostResponse> create(@Valid @RequestBody CreatePostRequest request,
@@ -32,7 +34,9 @@ public class PostController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         Post post = postService.create(request, userId);
-        return ResponseEntity.status(HttpStatus.CREATED).body(PostResponse.from(post));
+        PostResponse response = PostResponse.from(post);
+        postAttractionEnricher.enrich(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping
@@ -57,6 +61,7 @@ public class PostController {
         if (userId != null) {
             response.setBookmarked(bookmarkRepository.findByPostIdAndUserId(id, userId).isPresent());
         }
+        postAttractionEnricher.enrich(response);
         return response;
     }
 
@@ -69,7 +74,9 @@ public class PostController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         Post post = postService.update(id, request, userId);
-        return ResponseEntity.ok(PostResponse.from(post));
+        PostResponse response = PostResponse.from(post);
+        postAttractionEnricher.enrich(response);
+        return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/{id}")

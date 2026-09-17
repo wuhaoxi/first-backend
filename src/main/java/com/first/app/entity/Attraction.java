@@ -9,6 +9,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -102,4 +104,21 @@ public class Attraction extends BaseEntity {
     @Column(name = "is_popular", nullable = false)
     @Builder.Default
     private boolean isPopular = false;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSON")
+    @Builder.Default
+    private List<String> gallery = new ArrayList<>();
+
+    @Column(name = "rating_score", nullable = false)
+    @Builder.Default
+    private double ratingScore = 0.0;
+
+    @Column(name = "favorite_count", nullable = false)
+    @Builder.Default
+    private int favoriteCount = 0;
+
+    @Column(name = "heat_score", nullable = false)
+    @Builder.Default
+    private int heatScore = 0;
 }

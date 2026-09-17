@@ -232,6 +232,157 @@ class AttractionRepositoryTest {
                 .containsExactly(b.getId(), a.getId());
     }
 
+    @Test
+    void shouldCountPublishedAttractionsByCitySlug() {
+        Attraction a = buildPublished("a-beijing-museum", "Beijing Museum", "beijing",
+                AttractionCategory.MUSEUM);
+        Attraction b = buildPublished("b-beijing-temple", "Beijing Temple", "beijing",
+                AttractionCategory.TEMPLE);
+        Attraction draft = buildPublished("c-beijing-draft", "Beijing Draft", "beijing",
+                AttractionCategory.NATURE);
+        draft.setStatus(AttractionStatus.DRAFT);
+        Attraction other = buildPublished("d-xian-wall", "Xi'an Wall", "xian",
+                AttractionCategory.HISTORICAL_SITE);
+        persistAndFlush(a, b, draft, other);
+
+        assertThat(attractionRepository.countByCitySlugAndStatus("beijing", AttractionStatus.PUBLISHED))
+                .isEqualTo(2);
+        assertThat(attractionRepository.countByCitySlugAndStatus("guilin", AttractionStatus.PUBLISHED))
+                .isZero();
+    }
+
+    @Test
+    void shouldPersistGalleryAndReadBackInOrder() {
+        Attraction attraction = buildPublished("gallery-palace", "Gallery Palace", "beijing",
+                AttractionCategory.MUSEUM);
+        attraction.setGallery(List.of("https://cdn.example.com/gallery-1.jpg",
+                "https://cdn.example.com/gallery-2.jpg"));
+        entityManager.persist(attraction);
+        entityManager.flush();
+        entityManager.clear();
+
+        Attraction found = attractionRepository
+                .findBySlugAndStatus("gallery-palace", AttractionStatus.PUBLISHED)
+                .orElseThrow();
+
+        assertThat(found.getGallery()).containsExactly(
+                "https://cdn.example.com/gallery-1.jpg",
+                "https://cdn.example.com/gallery-2.jpg");
+    }
+
+    @Test
+    void shouldReadBackEmptyGalleryWhenNoneSaved() {
+        Attraction attraction = buildPublished("gallery-empty", "Empty Gallery", "hangzhou",
+                AttractionCategory.NATURE);
+        entityManager.persist(attraction);
+        entityManager.flush();
+        entityManager.clear();
+
+        Attraction found = attractionRepository
+                .findBySlugAndStatus("gallery-empty", AttractionStatus.PUBLISHED)
+                .orElseThrow();
+
+        assertThat(found.getGallery()).isEmpty();
+    }
+
+    @Test
+    void shouldPersistAndReadBackRankingFields() {
+        Attraction attraction = buildPublished("ranked-temple", "Ranked Temple", "xian",
+                AttractionCategory.TEMPLE);
+        attraction.setRatingScore(4.7);
+        attraction.setFavoriteCount(3200);
+        attraction.setHeatScore(92);
+        entityManager.persist(attraction);
+        entityManager.flush();
+        entityManager.clear();
+
+        Attraction found = attractionRepository
+                .findBySlugAndStatus("ranked-temple", AttractionStatus.PUBLISHED)
+                .orElseThrow();
+
+        assertThat(found.getRatingScore()).isEqualTo(4.7);
+        assertThat(found.getFavoriteCount()).isEqualTo(3200);
+        assertThat(found.getHeatScore()).isEqualTo(92);
+    }
+
+    @Test
+    void shouldOrderByRankingMetricsWithCreatedAtThenIdTiebreak() {
+        Attraction a = buildPublished("rank-a", "Rank A", "beijing", AttractionCategory.MUSEUM);
+        a.setRatingScore(4.9);
+        a.setHeatScore(90);
+        a.setFavoriteCount(200);
+        Attraction b = buildPublished("rank-b", "Rank B", "beijing", AttractionCategory.MUSEUM);
+        b.setRatingScore(4.9);
+        b.setHeatScore(90);
+        b.setFavoriteCount(100);
+        Attraction c = buildPublished("rank-c", "Rank C", "xian", AttractionCategory.HISTORICAL_SITE);
+        c.setRatingScore(4.4);
+        c.setHeatScore(95);
+        c.setFavoriteCount(300);
+        Attraction d = buildPublished("rank-d", "Rank D", "shanghai", AttractionCategory.TEMPLE);
+        d.setRatingScore(4.0);
+        d.setHeatScore(10);
+        d.setFavoriteCount(50);
+        Attraction e = buildPublished("rank-e", "Rank E", "chengdu", AttractionCategory.NATURE);
+        e.setRatingScore(0.0);
+        e.setHeatScore(5);
+        e.setFavoriteCount(50);
+        persistAndFlush(a, b, c, d, e);
+
+        LocalDateTime base = LocalDateTime.of(2026, 1, 1, 10, 0, 0);
+        updateCreatedAt(a.getId(), base);
+        updateCreatedAt(b.getId(), base);
+        updateCreatedAt(c.getId(), base.minusHours(1));
+        updateCreatedAt(d.getId(), base.minusHours(2));
+        updateCreatedAt(e.getId(), base.minusHours(3));
+        entityManager.clear();
+
+        Sort ratingSort = Sort.by(Sort.Order.desc("ratingScore"), Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id"));
+        Page<Attraction> byRating = attractionRepository.search(
+                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 20, ratingSort));
+        // 4.9 tie between B and A (equal createdAt) resolved by id DESC, then C, D, E
+        assertThat(byRating.getContent()).extracting(Attraction::getId)
+                .containsExactly(b.getId(), a.getId(), c.getId(), d.getId(), e.getId());
+
+        Sort heatSort = Sort.by(Sort.Order.desc("heatScore"), Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id"));
+        Page<Attraction> byHeat = attractionRepository.search(
+                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 20, heatSort));
+        // 90 tie between B and A resolved by id DESC, then D, E
+        assertThat(byHeat.getContent()).extracting(Attraction::getId)
+                .containsExactly(c.getId(), b.getId(), a.getId(), d.getId(), e.getId());
+
+        // City filter composes with the metric sort
+        Page<Attraction> beijingByHeat = attractionRepository.search(
+                AttractionStatus.PUBLISHED, "beijing", null, PageRequest.of(0, 20, heatSort));
+        assertThat(beijingByHeat.getContent()).extracting(Attraction::getId)
+                .containsExactly(b.getId(), a.getId());
+
+        Sort favoritesSort = Sort.by(Sort.Order.desc("favoriteCount"), Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id"));
+        Page<Attraction> byFavorites = attractionRepository.search(
+                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 20, favoritesSort));
+        // 50 tie between D and E resolved by createdAt DESC (D newer)
+        assertThat(byFavorites.getContent()).extracting(Attraction::getId)
+                .containsExactly(c.getId(), a.getId(), b.getId(), d.getId(), e.getId());
+    }
+
+    @Test
+    void shouldFindByIdInAndStatusFilteringDraftsAndUnknownIds() {
+        Attraction published = buildPublished("find-id-published", "Find Published", "beijing",
+                AttractionCategory.MUSEUM);
+        Attraction draft = buildPublished("find-id-draft", "Find Draft", "beijing",
+                AttractionCategory.MUSEUM);
+        draft.setStatus(AttractionStatus.DRAFT);
+        persistAndFlush(published, draft);
+
+        List<Attraction> found = attractionRepository.findByIdInAndStatus(
+                List.of(published.getId(), draft.getId(), 999_999L), AttractionStatus.PUBLISHED);
+
+        assertThat(found).extracting(Attraction::getId).containsExactly(published.getId());
+    }
+
     private Attraction buildPublished(String slug, String name, String citySlug,
                                       AttractionCategory category) {
         return Attraction.builder()

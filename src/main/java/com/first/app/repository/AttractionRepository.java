@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,4 +26,8 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
     List<Attraction> findByStatusAndIsPopularTrue(AttractionStatus status, Pageable pageable);
 
     Optional<Attraction> findBySlugAndStatus(String slug, AttractionStatus status);
+
+    long countByCitySlugAndStatus(String citySlug, AttractionStatus status);
+
+    List<Attraction> findByIdInAndStatus(Collection<Long> ids, AttractionStatus status);
 }

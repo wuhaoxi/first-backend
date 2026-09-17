@@ -35,8 +35,16 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AttractionServiceTest {
 
-    private static final Sort LIST_SORT = Sort.by(
+    private static final Sort POPULAR_LIST_SORT = Sort.by(
             Sort.Order.desc("isPopular"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort LATEST_SORT = Sort.by(
+            Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort RATING_SORT = Sort.by(
+            Sort.Order.desc("ratingScore"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort HEAT_SORT = Sort.by(
+            Sort.Order.desc("heatScore"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort FAVORITES_SORT = Sort.by(
+            Sort.Order.desc("favoriteCount"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
     private static final Sort POPULAR_SORT = Sort.by(
             Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
 
@@ -54,7 +62,7 @@ class AttractionServiceTest {
         when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
                 .thenReturn(page);
 
-        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, 0, 20);
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, 0, 20);
 
         assertThat(response.getContent()).hasSize(2);
         AttractionSummaryResponse firstItem = response.getContent().get(0);
@@ -77,7 +85,7 @@ class AttractionServiceTest {
                 eq(AttractionCategory.HISTORICAL_SITE), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(10), 0));
 
-        attractionService.list("beijing", "HISTORICAL_SITE", 1, 10);
+        attractionService.list("beijing", "HISTORICAL_SITE", null, 1, 10);
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
         verify(attractionRepository).search(
@@ -85,12 +93,12 @@ class AttractionServiceTest {
                 eq(AttractionCategory.HISTORICAL_SITE), captor.capture());
         assertThat(captor.getValue().getPageNumber()).isEqualTo(1);
         assertThat(captor.getValue().getPageSize()).isEqualTo(10);
-        assertThat(captor.getValue().getSort()).isEqualTo(LIST_SORT);
+        assertThat(captor.getValue().getSort()).isEqualTo(POPULAR_LIST_SORT);
     }
 
     @Test
     void list_invalidCategory_throwsBadRequest() {
-        assertThatThrownBy(() -> attractionService.list(null, "BOGUS", 0, 20))
+        assertThatThrownBy(() -> attractionService.list(null, "BOGUS", null, 0, 20))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("BOGUS");
 
@@ -99,14 +107,106 @@ class AttractionServiceTest {
 
     @Test
     void list_invalidPagination_throwsBadRequest() {
-        assertThatThrownBy(() -> attractionService.list(null, null, -1, 20))
+        assertThatThrownBy(() -> attractionService.list(null, null, null, -1, 20))
                 .isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> attractionService.list(null, null, 0, 0))
+        assertThatThrownBy(() -> attractionService.list(null, null, null, 0, 0))
                 .isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> attractionService.list(null, null, 0, 101))
+        assertThatThrownBy(() -> attractionService.list(null, null, null, 0, 101))
                 .isInstanceOf(InvalidRequestException.class);
 
         verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void list_omittedSortDefaultsToPopularOrdering() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, null, 0, 20);
+
+        assertThat(capturedSort()).isEqualTo(POPULAR_LIST_SORT);
+    }
+
+    @Test
+    void list_blankSortDefaultsToPopularOrdering() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, "  ", 0, 20);
+
+        assertThat(capturedSort()).isEqualTo(POPULAR_LIST_SORT);
+    }
+
+    @Test
+    void list_latestSortOrdersByCreatedAtDesc() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, "latest", 0, 20);
+
+        assertThat(capturedSort()).isEqualTo(LATEST_SORT);
+    }
+
+    @Test
+    void list_ratingSortOrdersByRatingScoreDesc() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, "rating", 0, 20);
+
+        assertThat(capturedSort()).isEqualTo(RATING_SORT);
+    }
+
+    @Test
+    void list_heatSortOrdersByHeatScoreDesc() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, "heat", 0, 20);
+
+        assertThat(capturedSort()).isEqualTo(HEAT_SORT);
+    }
+
+    @Test
+    void list_favoritesSortOrdersByFavoriteCountDesc() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, "favorites", 0, 20);
+
+        assertThat(capturedSort()).isEqualTo(FAVORITES_SORT);
+    }
+
+    @Test
+    void list_unknownSort_throwsBadRequest() {
+        assertThatThrownBy(() -> attractionService.list(null, null, "trending", 0, 20))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("trending");
+
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void list_mapsRankingFieldsIntoSummary() {
+        Attraction ranked = buildAttraction(1L, "forbidden-city", "Forbidden City");
+        ranked.setRatingScore(4.9);
+        ranked.setFavoriteCount(6200);
+        ranked.setHeatScore(98);
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(ranked), Pageable.ofSize(20), 1));
+
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, 0, 20);
+
+        AttractionSummaryResponse item = response.getContent().get(0);
+        assertThat(item.getRatingScore()).isEqualTo(4.9);
+        assertThat(item.getFavoriteCount()).isEqualTo(6200);
+        assertThat(item.getHeatScore()).isEqualTo(98);
+    }
+
+    private void stubEmptySearchPage() {
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+    }
+
+    private Sort capturedSort() {
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(attractionRepository)
+                .search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), captor.capture());
+        return captor.getValue().getSort();
     }
 
     @Test
@@ -152,6 +252,10 @@ class AttractionServiceTest {
         attraction.setBookingRequired(true);
         attraction.setBookingNote("Book with passport 7 days ahead");
         attraction.setSuggestedDuration("2-3 hours");
+        attraction.setGallery(List.of("https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg"));
+        attraction.setRatingScore(4.9);
+        attraction.setFavoriteCount(6200);
+        attraction.setHeatScore(98);
         attraction.setPopular(true);
         attraction.setCreatedAt(LocalDateTime.of(2026, 1, 1, 10, 0));
         attraction.setUpdatedAt(LocalDateTime.of(2026, 1, 2, 10, 0));
@@ -179,6 +283,11 @@ class AttractionServiceTest {
         assertThat(response.isBookingRequired()).isTrue();
         assertThat(response.getBookingNote()).isEqualTo("Book with passport 7 days ahead");
         assertThat(response.getSuggestedDuration()).isEqualTo("2-3 hours");
+        assertThat(response.getGallery()).containsExactly(
+                "https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg");
+        assertThat(response.getRatingScore()).isEqualTo(4.9);
+        assertThat(response.getFavoriteCount()).isEqualTo(6200);
+        assertThat(response.getHeatScore()).isEqualTo(98);
         assertThat(response.getCreatedAt()).isEqualTo(LocalDateTime.of(2026, 1, 1, 10, 0));
         assertThat(response.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 1, 2, 10, 0));
     }
@@ -201,6 +310,37 @@ class AttractionServiceTest {
         assertThatThrownBy(() -> attractionService.getBySlug("secret-spot"))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("secret-spot");
+    }
+
+    @Test
+    void findByIdPublic_returnsPublishedAttraction() {
+        Attraction attraction = buildAttraction(7L, "forbidden-city", "Forbidden City");
+        when(attractionRepository.findById(7L)).thenReturn(Optional.of(attraction));
+
+        Attraction result = attractionService.findByIdPublic(7L);
+
+        assertThat(result.getId()).isEqualTo(7L);
+        assertThat(result.getSlug()).isEqualTo("forbidden-city");
+    }
+
+    @Test
+    void findByIdPublic_draftAttraction_throwsNotFound() {
+        Attraction draft = buildAttraction(7L, "secret-spot", "Secret Spot");
+        draft.setStatus(AttractionStatus.DRAFT);
+        when(attractionRepository.findById(7L)).thenReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> attractionService.findByIdPublic(7L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("7");
+    }
+
+    @Test
+    void findByIdPublic_unknownId_throwsNotFound() {
+        when(attractionRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> attractionService.findByIdPublic(99L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("99");
     }
 
     private Attraction buildAttraction(Long id, String slug, String name) {

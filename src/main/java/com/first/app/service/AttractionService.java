@@ -1,6 +1,7 @@
 package com.first.app.service;
 
 import com.first.app.dto.AttractionResponse;
+import com.first.app.dto.AttractionSort;
 import com.first.app.dto.AttractionSummaryResponse;
 import com.first.app.dto.PageResponse;
 import com.first.app.entity.Attraction;
@@ -26,14 +27,23 @@ public class AttractionService {
     private static final int MIN_POPULAR_LIMIT = 1;
     private static final int MAX_POPULAR_LIMIT = 12;
 
-    private static final Sort LIST_SORT = Sort.by(
+    private static final Sort POPULAR_LIST_SORT = Sort.by(
             Sort.Order.desc("isPopular"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort LATEST_SORT = Sort.by(
+            Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort RATING_SORT = Sort.by(
+            Sort.Order.desc("ratingScore"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort HEAT_SORT = Sort.by(
+            Sort.Order.desc("heatScore"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+    private static final Sort FAVORITES_SORT = Sort.by(
+            Sort.Order.desc("favoriteCount"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
     private static final Sort POPULAR_SORT = Sort.by(
             Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
 
     private final AttractionRepository attractionRepository;
 
-    public PageResponse<AttractionSummaryResponse> list(String citySlug, String category, int page, int size) {
+    public PageResponse<AttractionSummaryResponse> list(String citySlug, String category, String sort,
+                                                         int page, int size) {
         if (page < 0) {
             throw new InvalidRequestException("page must not be negative");
         }
@@ -41,11 +51,22 @@ public class AttractionService {
             throw new InvalidRequestException("size must be between 1 and " + MAX_PAGE_SIZE);
         }
         AttractionCategory parsedCategory = parseCategory(category);
+        Sort resolvedSort = sortFor(AttractionSort.from(sort));
 
         Page<AttractionSummaryResponse> result = attractionRepository
-                .search(AttractionStatus.PUBLISHED, citySlug, parsedCategory, PageRequest.of(page, size, LIST_SORT))
+                .search(AttractionStatus.PUBLISHED, citySlug, parsedCategory, PageRequest.of(page, size, resolvedSort))
                 .map(AttractionSummaryResponse::from);
         return PageResponse.from(result);
+    }
+
+    private Sort sortFor(AttractionSort sort) {
+        return switch (sort) {
+            case LATEST -> LATEST_SORT;
+            case RATING -> RATING_SORT;
+            case HEAT -> HEAT_SORT;
+            case FAVORITES -> FAVORITES_SORT;
+            case POPULAR -> POPULAR_LIST_SORT;
+        };
     }
 
     public List<AttractionSummaryResponse> popular(int limit) {
@@ -64,6 +85,15 @@ public class AttractionService {
         return attractionRepository.findBySlugAndStatus(slug, AttractionStatus.PUBLISHED)
                 .map(AttractionResponse::from)
                 .orElseThrow(() -> new ResourceNotFoundException("Attraction not found: " + slug));
+    }
+
+    public Attraction findByIdPublic(Long id) {
+        Attraction attraction = attractionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Attraction not found with id: " + id));
+        if (attraction.getStatus() != AttractionStatus.PUBLISHED) {
+            throw new ResourceNotFoundException("Attraction not found with id: " + id);
+        }
+        return attraction;
     }
 
     private AttractionCategory parseCategory(String category) {

@@ -20,4 +20,6 @@ public class UpdatePostRequest {
     private String coverImage;
 
     private PostStatus status;
+
+    private List<Long> attractionIds;
 }

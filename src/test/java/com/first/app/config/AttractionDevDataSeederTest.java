@@ -10,6 +10,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -76,6 +77,45 @@ class AttractionDevDataSeederTest {
         List<Attraction> populars = saved.stream().filter(Attraction::isPopular).toList();
         assertThat(populars.subList(populars.size() - 6, populars.size()))
                 .extracting(Attraction::getSlug).containsExactlyElementsOf(SHOWCASE_SLUGS);
+    }
+
+    @Test
+    void run_appliesCuratedRankingsAcrossCatalog() throws Exception {
+        when(attractionRepository.count()).thenReturn(0L);
+
+        seeder.run();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Attraction>> captor = ArgumentCaptor.forClass(List.class);
+        verify(attractionRepository).saveAll(captor.capture());
+        List<Attraction> saved = captor.getValue();
+
+        // Every seeded attraction carries a curated public rating (3.5-5.0), non-negative
+        // interaction counts, and 3-4 curated Wikimedia Commons images; the first gallery
+        // entry doubles as the cover image.
+        assertThat(saved).allSatisfy(a -> {
+            assertThat(a.getRatingScore()).isBetween(3.5, 5.0);
+            assertThat(a.getFavoriteCount()).isGreaterThanOrEqualTo(0);
+            assertThat(a.getHeatScore()).isGreaterThanOrEqualTo(0);
+            assertThat(a.getGallery()).hasSizeBetween(3, 4);
+            assertThat(a.getGallery())
+                    .allSatisfy(url -> assertThat(url).startsWith("https://upload.wikimedia.org/"));
+            assertThat(a.getCoverImageUrl()).isEqualTo(a.getGallery().get(0));
+        });
+
+        // The six showcases must own the six highest heat scores (homepage ranking rail).
+        List<Integer> topSixHeat = saved.stream()
+                .map(Attraction::getHeatScore)
+                .sorted(Comparator.reverseOrder())
+                .limit(6)
+                .toList();
+        List<Attraction> showcases = saved.stream()
+                .filter(a -> SHOWCASE_SLUGS.contains(a.getSlug()))
+                .toList();
+        assertThat(showcases).hasSize(6);
+        assertThat(showcases).extracting(Attraction::getHeatScore)
+                .containsExactlyInAnyOrderElementsOf(topSixHeat);
+        assertThat(showcases).allSatisfy(a -> assertThat(a.getHeatScore()).isGreaterThanOrEqualTo(90));
     }
 
     @Test

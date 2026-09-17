@@ -27,6 +27,9 @@ public class AttractionSummaryResponse extends BaseResponse {
     private String summary;
     private String coverImageUrl;
     private boolean bookingRequired;
+    private double ratingScore;
+    private int favoriteCount;
+    private int heatScore;
 
     public static AttractionSummaryResponse from(Attraction attraction) {
         return AttractionSummaryResponse.builder()
@@ -42,6 +45,9 @@ public class AttractionSummaryResponse extends BaseResponse {
                 .summary(attraction.getSummary())
                 .coverImageUrl(attraction.getCoverImageUrl())
                 .bookingRequired(attraction.isBookingRequired())
+                .ratingScore(attraction.getRatingScore())
+                .favoriteCount(attraction.getFavoriteCount())
+                .heatScore(attraction.getHeatScore())
                 .build();
     }
 }

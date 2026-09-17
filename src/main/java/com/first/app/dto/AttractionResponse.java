@@ -36,6 +36,23 @@ public class AttractionResponse extends BaseResponse {
     private boolean bookingRequired;
     private String bookingNote;
     private String suggestedDuration;
+    private List<String> gallery;
+    private double ratingScore;
+    private int favoriteCount;
+    private int heatScore;
+
+    /**
+     * Number of visible (non-deleted) comments. Populated by
+     * {@code AttractionInteractionEnricher} for the detail endpoint; the
+     * attraction row carries no stored comment counter.
+     */
+    private int commentCount;
+
+    /**
+     * Whether the requesting user has favorited this attraction.
+     * {@code null} for anonymous requests.
+     */
+    private Boolean favorited;
 
     public static AttractionResponse from(Attraction attraction) {
         return AttractionResponse.builder()
@@ -61,6 +78,10 @@ public class AttractionResponse extends BaseResponse {
                 .bookingRequired(attraction.isBookingRequired())
                 .bookingNote(attraction.getBookingNote())
                 .suggestedDuration(attraction.getSuggestedDuration())
+                .gallery(attraction.getGallery())
+                .ratingScore(attraction.getRatingScore())
+                .favoriteCount(attraction.getFavoriteCount())
+                .heatScore(attraction.getHeatScore())
                 .build();
     }
 }

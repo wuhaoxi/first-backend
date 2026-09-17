@@ -2,11 +2,13 @@ package com.first.app.dto;
 
 import com.first.app.entity.Post;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -30,6 +32,14 @@ public class PostResponse extends BaseResponse {
      * Populated only by {@code PostController.findById}; not set by {@code PostResponse.from}.
      */
     private Boolean bookmarked;
+
+    /**
+     * Linked published attractions, in junction creation order.
+     * Defaults to empty; populated by {@code PostAttractionEnricher} on
+     * create / update / detail responses.
+     */
+    @Builder.Default
+    private List<LinkedAttractionResponse> attractions = new ArrayList<>();
 
     public static PostResponse from(Post post) {
         return PostResponse.builder()
