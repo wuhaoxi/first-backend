@@ -7,11 +7,16 @@ spring:
     web:
       pageable:
         max-page-size: 100
+    redis:
+      host: localhost
+      port: 6379
 
 server:
   port: 8080
 
 app:
+  cache:
+    ranking-ttl: 5m
   jwt:
     secret: this-is-a-test-secret-key-for-dev-only-change-in-production
     access-token-expiration: 900000

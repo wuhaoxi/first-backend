@@ -4,6 +4,7 @@ import com.first.app.entity.Attraction;
 import com.first.app.entity.AttractionCategory;
 import com.first.app.entity.AttractionStatus;
 import com.first.app.repository.AttractionRepository;
+import com.first.app.service.RankingCacheService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
@@ -19,6 +20,9 @@ import java.util.Map;
  * <p>Idempotent: runs only when the attractions table is empty. To force a re-seed,
  * clear the table first ({@code DELETE FROM attractions;}) and restart the app.
  *
+ * <p>After a successful seed the ranking cache is cleared so the fresh catalog is
+ * served immediately instead of waiting out the TTL.
+ *
  * <p>Insertion order matters: ids follow this order and the popular feed picks the top 6
  * by id descending, so the six homepage showcases MUST stay the final catalog entries.
  *
@@ -31,6 +35,7 @@ import java.util.Map;
 public class AttractionDevDataSeeder implements CommandLineRunner {
 
     private final AttractionRepository attractionRepository;
+    private final RankingCacheService rankingCacheService;
 
     private static final Map<String, Ranking> RANKINGS = Map.ofEntries(
             // --- City catalog ---
@@ -201,6 +206,7 @@ public class AttractionDevDataSeeder implements CommandLineRunner {
         applyRankings(attractions);
         applyImages(attractions);
         attractionRepository.saveAll(attractions);
+        rankingCacheService.evictAll();
     }
 
     private void applyRankings(List<Attraction> attractions) {

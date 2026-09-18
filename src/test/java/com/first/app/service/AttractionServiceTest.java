@@ -1,5 +1,6 @@
 package com.first.app.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.first.app.dto.AttractionResponse;
 import com.first.app.dto.AttractionSummaryResponse;
 import com.first.app.dto.PageResponse;
@@ -9,6 +10,7 @@ import com.first.app.entity.AttractionStatus;
 import com.first.app.exception.InvalidRequestException;
 import com.first.app.exception.ResourceNotFoundException;
 import com.first.app.repository.AttractionRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -19,15 +21,20 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -51,8 +58,20 @@ class AttractionServiceTest {
     @Mock
     private AttractionRepository attractionRepository;
 
+    @Mock
+    private RankingCacheService rankingCacheService;
+
     @InjectMocks
     private AttractionService attractionService;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(attractionService, "rankingTtl", Duration.ofMinutes(5));
+        // Cache-miss semantics by default: the loader (repository fetch) runs for every call;
+        // tests overriding this stub simulate cache hits.
+        lenient().when(rankingCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(3)).get());
+    }
 
     @Test
     void list_mapsEntitiesToSummariesInsidePageResponse() {
@@ -209,6 +228,24 @@ class AttractionServiceTest {
         return captor.getValue().getSort();
     }
 
+    private PageResponse<AttractionSummaryResponse> cannedPage() {
+        return new PageResponse<>(List.of(cannedSummary("cached-item")), 0, 20, 1, 1);
+    }
+
+    private AttractionSummaryResponse cannedSummary(String slug) {
+        return AttractionSummaryResponse.builder()
+                .id(1L)
+                .slug(slug)
+                .name("Cached Item")
+                .nameZh("缓存项")
+                .category(AttractionCategory.HISTORICAL_SITE)
+                .tags(List.of("unesco"))
+                .city("Beijing")
+                .citySlug("beijing")
+                .summary("Summary")
+                .build();
+    }
+
     @Test
     void popular_returnsSummariesWithinLimit() {
         when(attractionRepository.findByStatusAndIsPopularTrue(eq(AttractionStatus.PUBLISHED), any(Pageable.class)))
@@ -236,6 +273,134 @@ class AttractionServiceTest {
                 .isInstanceOf(InvalidRequestException.class);
 
         verifyNoInteractions(attractionRepository);
+    }
+
+    // --- ranking cache integration ---
+
+    @Test
+    void list_unfilteredRankingSort_routesThroughCacheWithExactKey() {
+        PageResponse<AttractionSummaryResponse> canned = cannedPage();
+        when(rankingCacheService.getOrLoad(eq("attraction:ranking:heat:0:20"), eq(Duration.ofMinutes(5)),
+                any(), any())).thenReturn(canned);
+
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, "heat", 0, 20);
+
+        assertThat(response).isSameAs(canned);
+        verify(rankingCacheService).getOrLoad(eq("attraction:ranking:heat:0:20"), eq(Duration.ofMinutes(5)),
+                any(TypeReference.class), any(Supplier.class));
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void list_omittedSort_usesPopularModeCacheKey() {
+        PageResponse<AttractionSummaryResponse> canned = cannedPage();
+        when(rankingCacheService.getOrLoad(eq("attraction:ranking:popular:0:20"), eq(Duration.ofMinutes(5)),
+                any(), any())).thenReturn(canned);
+
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, 0, 20);
+
+        assertThat(response).isSameAs(canned);
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void list_ratingAndFavoritesSorts_useTheirCacheKeys() {
+        when(rankingCacheService.getOrLoad(eq("attraction:ranking:rating:0:20"), eq(Duration.ofMinutes(5)),
+                any(), any())).thenReturn(cannedPage());
+        when(rankingCacheService.getOrLoad(eq("attraction:ranking:favorites:0:20"), eq(Duration.ofMinutes(5)),
+                any(), any())).thenReturn(cannedPage());
+
+        attractionService.list(null, null, "rating", 0, 20);
+        attractionService.list(null, null, "favorites", 0, 20);
+
+        verify(rankingCacheService).getOrLoad(eq("attraction:ranking:rating:0:20"), eq(Duration.ofMinutes(5)),
+                any(TypeReference.class), any(Supplier.class));
+        verify(rankingCacheService).getOrLoad(eq("attraction:ranking:favorites:0:20"), eq(Duration.ofMinutes(5)),
+                any(TypeReference.class), any(Supplier.class));
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void list_cacheMiss_loaderEvaluatesRepository() {
+        Attraction attraction = buildAttraction(1L, "forbidden-city", "Forbidden City");
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(attraction), Pageable.ofSize(20), 1));
+
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, "heat", 0, 20);
+
+        assertThat(response.getContent()).hasSize(1);
+        assertThat(response.getContent().get(0).getSlug()).isEqualTo("forbidden-city");
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class));
+    }
+
+    @Test
+    void list_withCityFilter_bypassesCache() {
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq("beijing"), eq(null), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+
+        attractionService.list("beijing", null, "heat", 0, 20);
+
+        verifyNoInteractions(rankingCacheService);
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq("beijing"), eq(null), any(Pageable.class));
+    }
+
+    @Test
+    void list_withCategoryFilter_bypassesCache() {
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null),
+                eq(AttractionCategory.HISTORICAL_SITE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+
+        attractionService.list(null, "HISTORICAL_SITE", "heat", 0, 20);
+
+        verifyNoInteractions(rankingCacheService);
+    }
+
+    @Test
+    void list_latestSort_bypassesCache() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, "latest", 0, 20);
+
+        verifyNoInteractions(rankingCacheService);
+        assertThat(capturedSort()).isEqualTo(LATEST_SORT);
+    }
+
+    @Test
+    void list_invalidPagination_neverTouchesCache() {
+        assertThatThrownBy(() -> attractionService.list(null, null, "heat", 0, 101))
+                .isInstanceOf(InvalidRequestException.class);
+
+        verifyNoInteractions(rankingCacheService);
+    }
+
+    @Test
+    void popular_routesThroughCacheWithLimitKey() {
+        List<AttractionSummaryResponse> canned = List.of(cannedSummary("cached-item"));
+        when(rankingCacheService.getOrLoad(eq("attraction:popular:6"), eq(Duration.ofMinutes(5)),
+                any(), any())).thenReturn(canned);
+
+        List<AttractionSummaryResponse> response = attractionService.popular(6);
+
+        assertThat(response).isSameAs(canned);
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void popular_cacheMiss_loaderQueriesPopularRepository() {
+        when(attractionRepository.findByStatusAndIsPopularTrue(eq(AttractionStatus.PUBLISHED), any(Pageable.class)))
+                .thenReturn(List.of(buildAttraction(2L, "great-wall", "Great Wall")));
+
+        List<AttractionSummaryResponse> response = attractionService.popular(3);
+
+        assertThat(response).extracting(AttractionSummaryResponse::getSlug).containsExactly("great-wall");
+    }
+
+    @Test
+    void popular_invalidLimit_neverTouchesCache() {
+        assertThatThrownBy(() -> attractionService.popular(13))
+                .isInstanceOf(InvalidRequestException.class);
+
+        verifyNoInteractions(rankingCacheService);
     }
 
     @Test

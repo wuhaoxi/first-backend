@@ -3,9 +3,11 @@ package com.first.app.config;
 import com.first.app.entity.Attraction;
 import com.first.app.entity.AttractionStatus;
 import com.first.app.repository.AttractionRepository;
+import com.first.app.service.RankingCacheService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,8 +19,10 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,6 +34,9 @@ class AttractionDevDataSeederTest {
 
     @Mock
     private AttractionRepository attractionRepository;
+
+    @Mock
+    private RankingCacheService rankingCacheService;
 
     @InjectMocks
     private AttractionDevDataSeeder seeder;
@@ -119,11 +126,25 @@ class AttractionDevDataSeederTest {
     }
 
     @Test
+    void run_whenTableEmpty_evictsRankingCacheAfterSave() throws Exception {
+        when(attractionRepository.count()).thenReturn(0L);
+
+        seeder.run();
+
+        // Eviction MUST follow the save: clearing first would let a concurrent read
+        // re-populate the cache with the stale (pre-seed) catalog.
+        InOrder inOrder = inOrder(attractionRepository, rankingCacheService);
+        inOrder.verify(attractionRepository).saveAll(any());
+        inOrder.verify(rankingCacheService).evictAll();
+    }
+
+    @Test
     void run_whenTableNotEmpty_skipsSeeding() throws Exception {
         when(attractionRepository.count()).thenReturn(24L);
 
         seeder.run();
 
         verify(attractionRepository, never()).saveAll(any());
+        verifyNoInteractions(rankingCacheService);
     }
 }
