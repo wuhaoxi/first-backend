@@ -238,6 +238,30 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.email").value("alice@example.com"));
     }
 
+    @Test
+    void getMe_shouldReturnAvatarUrl_whenPresent() throws Exception {
+        AuthResponse response = buildAuthResponse();
+        response.setAvatarUrl("/api/uploads/avatars/1/avatar.jpg");
+        when(authService.getCurrentUser(1L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/auth/me")
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.avatarUrl").value("/api/uploads/avatars/1/avatar.jpg"))
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
+                .andExpect(jsonPath("$.verificationToken").doesNotExist());
+    }
+
+    @Test
+    void getMe_shouldReturnNullAvatarUrl_whenAbsent() throws Exception {
+        when(authService.getCurrentUser(1L)).thenReturn(buildAuthResponse());
+
+        mockMvc.perform(get("/api/auth/me")
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.avatarUrl").value(org.hamcrest.Matchers.nullValue()));
+    }
+
     // ========== CHANGE PASSWORD ==========
 
     @Test

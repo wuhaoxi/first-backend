@@ -48,4 +48,7 @@ public class User extends BaseEntity {
     @JsonIgnore
     @Column(name = "verification_token", length = 36)
     private String verificationToken;
+
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
 }

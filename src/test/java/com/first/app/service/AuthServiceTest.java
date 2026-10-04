@@ -372,4 +372,42 @@ class AuthServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("999");
     }
+
+    // ========== AVATAR URL ==========
+
+    @Test
+    void register_shouldReturnNullAvatarUrl_forFreshAccount() {
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode("SecureP@ss1")).thenReturn("$2a$10$hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(1L);
+            return u;
+        });
+
+        AuthResponse result = authService.register(registerRequest);
+
+        assertThat(result.getAvatarUrl()).isNull();
+    }
+
+    @Test
+    void login_shouldIncludeAvatarUrl_whenUserHasAvatar() {
+        activeUser.setAvatarUrl("/api/uploads/avatars/1/avatar.jpg");
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(activeUser));
+        when(passwordEncoder.matches("SecureP@ss1", "$2a$10$hashed")).thenReturn(true);
+
+        AuthResponse result = authService.login(loginRequest);
+
+        assertThat(result.getAvatarUrl()).isEqualTo("/api/uploads/avatars/1/avatar.jpg");
+    }
+
+    @Test
+    void getCurrentUser_shouldIncludeAvatarUrl_whenSet() {
+        activeUser.setAvatarUrl("/api/uploads/avatars/1/avatar.jpg");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeUser));
+
+        AuthResponse result = authService.getCurrentUser(1L);
+
+        assertThat(result.getAvatarUrl()).isEqualTo("/api/uploads/avatars/1/avatar.jpg");
+    }
 }

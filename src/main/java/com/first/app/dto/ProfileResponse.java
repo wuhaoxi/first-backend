@@ -13,20 +13,20 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class AuthResponse {
+public class ProfileResponse {
 
     private Long id;
-    private String name;
+    private String nickname;
     private String email;
     private String avatarUrl;
     private UserStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    public static AuthResponse from(User user) {
-        return AuthResponse.builder()
+    public static ProfileResponse from(User user) {
+        return ProfileResponse.builder()
                 .id(user.getId())
-                .name(user.getName())
+                .nickname(user.getName())
                 .email(user.getEmail())
                 .avatarUrl(user.getAvatarUrl())
                 .status(user.getStatus())
