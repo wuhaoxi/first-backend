@@ -10,6 +10,15 @@ spring:
     redis:
       host: localhost
       port: 6379
+  ai:
+    openai:
+      # Placeholder keeps the context bootable when DEEPSEEK_API_KEY is unset;
+      # real calls are gated by app.assistant.api-key (blank -> 503).
+      api-key: ${DEEPSEEK_API_KEY:sk-not-configured}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: deepseek-chat
 
 server:
   port: 8080
@@ -17,6 +26,14 @@ server:
 app:
   cache:
     ranking-ttl: 5m
+  assistant:
+    # Gate: blank key (env unset) keeps the endpoint at 503 and no model call.
+    api-key: ${DEEPSEEK_API_KEY:}
+    history-ttl: 24h
+    window-messages: 20
+    window-chars: 6000
+    max-message-length: 2000
+    rate-limit-per-minute: 10
   jwt:
     secret: this-is-a-test-secret-key-for-dev-only-change-in-production
     access-token-expiration: 900000

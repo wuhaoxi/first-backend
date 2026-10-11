@@ -15,6 +15,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -134,6 +136,53 @@ class CityRepositoryTest {
                 .isEmpty();
         assertThat(cityRepository.findBySlugAndStatus("no-such-city", CityStatus.PUBLISHED))
                 .isEmpty();
+    }
+
+    @Test
+    void shouldRoundTripCoordinatesExactly() {
+        City city = buildPublished("chengdu", "Chengdu", "成都");
+        city.setLatitude(30.5728);
+        city.setLongitude(104.0668);
+
+        entityManager.persist(city);
+        entityManager.flush();
+        entityManager.clear();
+
+        City found = cityRepository
+                .findBySlugAndStatus("chengdu", CityStatus.PUBLISHED)
+                .orElseThrow();
+
+        assertThat(found.getLatitude()).isEqualTo(30.5728);
+        assertThat(found.getLongitude()).isEqualTo(104.0668);
+    }
+
+    @Test
+    void shouldPersistAndReadBackCityWithNullCoordinates() {
+        City city = buildPublished("null-coords", "Null Coords", "空坐标");
+
+        entityManager.persist(city);
+        entityManager.flush();
+        entityManager.clear();
+
+        City found = cityRepository
+                .findBySlugAndStatus("null-coords", CityStatus.PUBLISHED)
+                .orElseThrow();
+
+        assertThat(found.getLatitude()).isNull();
+        assertThat(found.getLongitude()).isNull();
+    }
+
+    @Test
+    void shouldGenerateCoordinateColumnsNamedLatitudeAndLongitude() {
+        @SuppressWarnings("unchecked")
+        List<String> columns = entityManager.createNativeQuery(
+                        "SELECT column_name FROM information_schema.columns "
+                                + "WHERE table_name = 'cities' "
+                                + "AND column_name IN ('latitude', 'longitude') "
+                                + "ORDER BY column_name")
+                .getResultList();
+
+        assertThat(columns).containsExactly("latitude", "longitude");
     }
 
     private City buildPublished(String slug, String name, String nameZh) {

@@ -44,6 +44,12 @@ public class City extends BaseEntity {
     @Column(name = "best_season", length = 100)
     private String bestSeason;
 
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default

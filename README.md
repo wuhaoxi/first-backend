@@ -25,6 +25,29 @@ mysql -uroot -e "CREATE DATABASE IF NOT EXISTS wanderchina CHARACTER SET utf8mb4
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
+## AI Assistant Configuration
+
+The homepage AI assistant streams replies from DeepSeek (`POST /api/assistant/chat`, SSE). Keep the API key in your shell environment only — never write it into a tracked file, this README, or shell history.
+
+```bash
+# Export in the shell that starts the backend (environment-only, never committed)
+export DEEPSEEK_API_KEY=…
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+Without the key the app still boots; chat requests fail cleanly with `503` (`The assistant is not configured`). Redis on `localhost:6379` is required for conversation memory and rate limiting.
+
+`app.assistant.*` settings (`src/main/resources/application.yml`):
+
+| Key                    | Default              | Purpose                                                                  |
+|------------------------|----------------------|--------------------------------------------------------------------------|
+| `api-key`              | `${DEEPSEEK_API_KEY:}` | Blank → assistant disabled (`503`)                                     |
+| `history-ttl`          | `24h`                | TTL of `assistant:conversation:{userId}:{conversationId}`, refreshed per turn |
+| `window-messages`      | `20`                 | Max history turns replayed into the prompt                               |
+| `window-chars`         | `6000`               | Max history characters replayed into the prompt                          |
+| `max-message-length`   | `2000`               | Longer user messages are rejected with `400`                             |
+| `rate-limit-per-minute`| `10`                 | Per-user limit; exceeding it returns `429`                               |
+
 ## API Endpoints
 
 | Method | Path              | Description       | Request Body                          |

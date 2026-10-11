@@ -17,10 +17,13 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
 
     @Query("SELECT a FROM Attraction a WHERE a.status = :status "
             + "AND (:citySlug IS NULL OR a.citySlug = :citySlug) "
-            + "AND (:category IS NULL OR a.category = :category)")
+            + "AND (:category IS NULL OR a.category = :category) "
+            + "AND (:q IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '!' "
+            + "OR LOWER(a.nameZh) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '!')")
     Page<Attraction> search(@Param("status") AttractionStatus status,
                             @Param("citySlug") String citySlug,
                             @Param("category") AttractionCategory category,
+                            @Param("q") String q,
                             Pageable pageable);
 
     List<Attraction> findByStatusAndIsPopularTrue(AttractionStatus status, Pageable pageable);

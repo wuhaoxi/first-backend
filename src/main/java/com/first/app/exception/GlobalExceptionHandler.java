@@ -54,8 +54,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ErrorResponse.of(ex.getMessage(), 400));
+        ErrorResponse body = ex.getErrors().isEmpty()
+                ? ErrorResponse.of(ex.getMessage(), 400)
+                : ErrorResponse.builder()
+                        .message(ex.getMessage())
+                        .status(400)
+                        .errors(ex.getErrors())
+                        .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(UpstreamUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleUpstreamUnavailable(UpstreamUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(ErrorResponse.of(ex.getMessage(), 502));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -109,5 +121,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of(ex.getMessage(), 403));
+    }
+
+    @ExceptionHandler(UnauthenticatedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthenticated(UnauthenticatedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of(ex.getMessage(), 401));
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimitExceeded(RateLimitExceededException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ErrorResponse.of(ex.getMessage(), 429));
+    }
+
+    @ExceptionHandler(AssistantUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleAssistantUnavailable(AssistantUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of(ex.getMessage(), 503));
     }
 }

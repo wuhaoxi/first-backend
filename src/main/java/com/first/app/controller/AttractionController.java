@@ -29,9 +29,10 @@ public class AttractionController {
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(attractionService.list(city, category, sort, page, size));
+        return ResponseEntity.ok(attractionService.list(city, category, sort, q, page, size));
     }
 
     @GetMapping("/popular")

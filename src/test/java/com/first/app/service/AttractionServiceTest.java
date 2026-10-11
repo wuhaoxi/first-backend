@@ -78,10 +78,10 @@ class AttractionServiceTest {
         Attraction first = buildAttraction(1L, "forbidden-city", "Forbidden City");
         Attraction second = buildAttraction(2L, "great-wall", "Great Wall");
         Page<Attraction> page = new PageImpl<>(List.of(first, second), Pageable.ofSize(20), 2);
-        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), eq(null), any(Pageable.class)))
                 .thenReturn(page);
 
-        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, 0, 20);
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, null, 0, 20);
 
         assertThat(response.getContent()).hasSize(2);
         AttractionSummaryResponse firstItem = response.getContent().get(0);
@@ -101,15 +101,15 @@ class AttractionServiceTest {
     @Test
     void list_forwardsFiltersAndSortsIntoRepositoryCall() {
         when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq("beijing"),
-                eq(AttractionCategory.HISTORICAL_SITE), any(Pageable.class)))
+                eq(AttractionCategory.HISTORICAL_SITE), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(10), 0));
 
-        attractionService.list("beijing", "HISTORICAL_SITE", null, 1, 10);
+        attractionService.list("beijing", "HISTORICAL_SITE", null, null, 1, 10);
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
         verify(attractionRepository).search(
                 eq(AttractionStatus.PUBLISHED), eq("beijing"),
-                eq(AttractionCategory.HISTORICAL_SITE), captor.capture());
+                eq(AttractionCategory.HISTORICAL_SITE), eq(null), captor.capture());
         assertThat(captor.getValue().getPageNumber()).isEqualTo(1);
         assertThat(captor.getValue().getPageSize()).isEqualTo(10);
         assertThat(captor.getValue().getSort()).isEqualTo(POPULAR_LIST_SORT);
@@ -117,7 +117,7 @@ class AttractionServiceTest {
 
     @Test
     void list_invalidCategory_throwsBadRequest() {
-        assertThatThrownBy(() -> attractionService.list(null, "BOGUS", null, 0, 20))
+        assertThatThrownBy(() -> attractionService.list(null, "BOGUS", null, null, 0, 20))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("BOGUS");
 
@@ -126,11 +126,11 @@ class AttractionServiceTest {
 
     @Test
     void list_invalidPagination_throwsBadRequest() {
-        assertThatThrownBy(() -> attractionService.list(null, null, null, -1, 20))
+        assertThatThrownBy(() -> attractionService.list(null, null, null, null, -1, 20))
                 .isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> attractionService.list(null, null, null, 0, 0))
+        assertThatThrownBy(() -> attractionService.list(null, null, null, null, 0, 0))
                 .isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> attractionService.list(null, null, null, 0, 101))
+        assertThatThrownBy(() -> attractionService.list(null, null, null, null, 0, 101))
                 .isInstanceOf(InvalidRequestException.class);
 
         verifyNoInteractions(attractionRepository);
@@ -140,7 +140,7 @@ class AttractionServiceTest {
     void list_omittedSortDefaultsToPopularOrdering() {
         stubEmptySearchPage();
 
-        attractionService.list(null, null, null, 0, 20);
+        attractionService.list(null, null, null, null, 0, 20);
 
         assertThat(capturedSort()).isEqualTo(POPULAR_LIST_SORT);
     }
@@ -149,7 +149,7 @@ class AttractionServiceTest {
     void list_blankSortDefaultsToPopularOrdering() {
         stubEmptySearchPage();
 
-        attractionService.list(null, null, "  ", 0, 20);
+        attractionService.list(null, null, "  ", null, 0, 20);
 
         assertThat(capturedSort()).isEqualTo(POPULAR_LIST_SORT);
     }
@@ -158,7 +158,7 @@ class AttractionServiceTest {
     void list_latestSortOrdersByCreatedAtDesc() {
         stubEmptySearchPage();
 
-        attractionService.list(null, null, "latest", 0, 20);
+        attractionService.list(null, null, "latest", null, 0, 20);
 
         assertThat(capturedSort()).isEqualTo(LATEST_SORT);
     }
@@ -167,7 +167,7 @@ class AttractionServiceTest {
     void list_ratingSortOrdersByRatingScoreDesc() {
         stubEmptySearchPage();
 
-        attractionService.list(null, null, "rating", 0, 20);
+        attractionService.list(null, null, "rating", null, 0, 20);
 
         assertThat(capturedSort()).isEqualTo(RATING_SORT);
     }
@@ -176,7 +176,7 @@ class AttractionServiceTest {
     void list_heatSortOrdersByHeatScoreDesc() {
         stubEmptySearchPage();
 
-        attractionService.list(null, null, "heat", 0, 20);
+        attractionService.list(null, null, "heat", null, 0, 20);
 
         assertThat(capturedSort()).isEqualTo(HEAT_SORT);
     }
@@ -185,14 +185,14 @@ class AttractionServiceTest {
     void list_favoritesSortOrdersByFavoriteCountDesc() {
         stubEmptySearchPage();
 
-        attractionService.list(null, null, "favorites", 0, 20);
+        attractionService.list(null, null, "favorites", null, 0, 20);
 
         assertThat(capturedSort()).isEqualTo(FAVORITES_SORT);
     }
 
     @Test
     void list_unknownSort_throwsBadRequest() {
-        assertThatThrownBy(() -> attractionService.list(null, null, "trending", 0, 20))
+        assertThatThrownBy(() -> attractionService.list(null, null, "trending", null, 0, 20))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("trending");
 
@@ -205,10 +205,10 @@ class AttractionServiceTest {
         ranked.setRatingScore(4.9);
         ranked.setFavoriteCount(6200);
         ranked.setHeatScore(98);
-        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(ranked), Pageable.ofSize(20), 1));
 
-        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, 0, 20);
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, null, 0, 20);
 
         AttractionSummaryResponse item = response.getContent().get(0);
         assertThat(item.getRatingScore()).isEqualTo(4.9);
@@ -217,14 +217,14 @@ class AttractionServiceTest {
     }
 
     private void stubEmptySearchPage() {
-        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
     }
 
     private Sort capturedSort() {
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
         verify(attractionRepository)
-                .search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), captor.capture());
+                .search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), eq(null), captor.capture());
         return captor.getValue().getSort();
     }
 
@@ -283,7 +283,7 @@ class AttractionServiceTest {
         when(rankingCacheService.getOrLoad(eq("attraction:ranking:heat:0:20"), eq(Duration.ofMinutes(5)),
                 any(), any())).thenReturn(canned);
 
-        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, "heat", 0, 20);
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, "heat", null, 0, 20);
 
         assertThat(response).isSameAs(canned);
         verify(rankingCacheService).getOrLoad(eq("attraction:ranking:heat:0:20"), eq(Duration.ofMinutes(5)),
@@ -297,7 +297,7 @@ class AttractionServiceTest {
         when(rankingCacheService.getOrLoad(eq("attraction:ranking:popular:0:20"), eq(Duration.ofMinutes(5)),
                 any(), any())).thenReturn(canned);
 
-        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, 0, 20);
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, null, null, 0, 20);
 
         assertThat(response).isSameAs(canned);
         verifyNoInteractions(attractionRepository);
@@ -310,8 +310,8 @@ class AttractionServiceTest {
         when(rankingCacheService.getOrLoad(eq("attraction:ranking:favorites:0:20"), eq(Duration.ofMinutes(5)),
                 any(), any())).thenReturn(cannedPage());
 
-        attractionService.list(null, null, "rating", 0, 20);
-        attractionService.list(null, null, "favorites", 0, 20);
+        attractionService.list(null, null, "rating", null, 0, 20);
+        attractionService.list(null, null, "favorites", null, 0, 20);
 
         verify(rankingCacheService).getOrLoad(eq("attraction:ranking:rating:0:20"), eq(Duration.ofMinutes(5)),
                 any(TypeReference.class), any(Supplier.class));
@@ -323,34 +323,34 @@ class AttractionServiceTest {
     @Test
     void list_cacheMiss_loaderEvaluatesRepository() {
         Attraction attraction = buildAttraction(1L, "forbidden-city", "Forbidden City");
-        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class)))
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(attraction), Pageable.ofSize(20), 1));
 
-        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, "heat", 0, 20);
+        PageResponse<AttractionSummaryResponse> response = attractionService.list(null, null, "heat", null, 0, 20);
 
         assertThat(response.getContent()).hasSize(1);
         assertThat(response.getContent().get(0).getSlug()).isEqualTo("forbidden-city");
-        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), any(Pageable.class));
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null), eq(null), any(Pageable.class));
     }
 
     @Test
     void list_withCityFilter_bypassesCache() {
-        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq("beijing"), eq(null), any(Pageable.class)))
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq("beijing"), eq(null), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
 
-        attractionService.list("beijing", null, "heat", 0, 20);
+        attractionService.list("beijing", null, "heat", null, 0, 20);
 
         verifyNoInteractions(rankingCacheService);
-        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq("beijing"), eq(null), any(Pageable.class));
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq("beijing"), eq(null), eq(null), any(Pageable.class));
     }
 
     @Test
     void list_withCategoryFilter_bypassesCache() {
         when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null),
-                eq(AttractionCategory.HISTORICAL_SITE), any(Pageable.class)))
+                eq(AttractionCategory.HISTORICAL_SITE), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
 
-        attractionService.list(null, "HISTORICAL_SITE", "heat", 0, 20);
+        attractionService.list(null, "HISTORICAL_SITE", "heat", null, 0, 20);
 
         verifyNoInteractions(rankingCacheService);
     }
@@ -359,7 +359,7 @@ class AttractionServiceTest {
     void list_latestSort_bypassesCache() {
         stubEmptySearchPage();
 
-        attractionService.list(null, null, "latest", 0, 20);
+        attractionService.list(null, null, "latest", null, 0, 20);
 
         verifyNoInteractions(rankingCacheService);
         assertThat(capturedSort()).isEqualTo(LATEST_SORT);
@@ -367,10 +367,91 @@ class AttractionServiceTest {
 
     @Test
     void list_invalidPagination_neverTouchesCache() {
-        assertThatThrownBy(() -> attractionService.list(null, null, "heat", 0, 101))
+        assertThatThrownBy(() -> attractionService.list(null, null, "heat", null, 0, 101))
                 .isInstanceOf(InvalidRequestException.class);
 
         verifyNoInteractions(rankingCacheService);
+    }
+
+    // --- keyword filter ---
+
+    @Test
+    void list_keyword_isTrimmedAndForwardedToRepository() {
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("wall"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+
+        attractionService.list(null, null, null, "  wall  ", 0, 20);
+
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("wall"), any(Pageable.class));
+    }
+
+    @Test
+    void list_blankKeyword_behavesAsAbsent() {
+        stubEmptySearchPage();
+
+        attractionService.list(null, null, null, "   ", 0, 20);
+
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq(null), any(Pageable.class));
+    }
+
+    @Test
+    void list_escapesLikeWildcardsBeforeRepository() {
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("100!%"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("a!_b!!c"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+
+        attractionService.list(null, null, null, "100%", 0, 20);
+        attractionService.list(null, null, null, "a_b!c", 0, 20);
+
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("100!%"), any(Pageable.class));
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("a!_b!!c"), any(Pageable.class));
+        verifyNoInteractions(rankingCacheService);
+    }
+
+    @Test
+    void list_overLengthKeyword_throwsBadRequestWithoutCacheOrRepository() {
+        String tooLong = "a".repeat(101);
+
+        assertThatThrownBy(() -> attractionService.list(null, null, "rating", tooLong, 0, 20))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("100");
+
+        verifyNoInteractions(rankingCacheService);
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    void list_keywordAtMaxLength_isAccepted() {
+        String maxLength = "a".repeat(100);
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq(maxLength), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+
+        attractionService.list(null, null, null, maxLength, 0, 20);
+
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq(maxLength), any(Pageable.class));
+    }
+
+    @Test
+    void list_keywordWithRankingSort_bypassesCache() {
+        when(attractionRepository.search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("wall"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), Pageable.ofSize(20), 0));
+
+        attractionService.list(null, null, "rating", "wall", 0, 20);
+
+        verifyNoInteractions(rankingCacheService);
+        verify(attractionRepository).search(eq(AttractionStatus.PUBLISHED), eq(null), eq(null),
+                eq("wall"), any(Pageable.class));
     }
 
     @Test

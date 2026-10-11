@@ -67,7 +67,7 @@ class AttractionControllerTest {
                 .bookingRequired(true)
                 .createdAt(LocalDateTime.of(2026, 1, 1, 10, 0))
                 .build();
-        when(attractionService.list(null, null, null, 0, 20))
+        when(attractionService.list(null, null, null, null, 0, 20))
                 .thenReturn(new PageResponse<>(List.of(item), 0, 20, 1, 1));
 
         mockMvc.perform(get("/api/attractions"))
@@ -86,18 +86,18 @@ class AttractionControllerTest {
 
     @Test
     void list_forwardsFilterAndPaginationParameters() throws Exception {
-        when(attractionService.list("beijing", "TEMPLE", null, 1, 10))
+        when(attractionService.list("beijing", "TEMPLE", null, null, 1, 10))
                 .thenReturn(new PageResponse<>(List.of(), 1, 10, 0, 0));
 
         mockMvc.perform(get("/api/attractions?city=beijing&category=TEMPLE&page=1&size=10"))
                 .andExpect(status().isOk());
 
-        verify(attractionService).list("beijing", "TEMPLE", null, 1, 10);
+        verify(attractionService).list("beijing", "TEMPLE", null, null, 1, 10);
     }
 
     @Test
     void list_invalidParameters_return400ErrorBody() throws Exception {
-        when(attractionService.list(null, null, null, -1, 20))
+        when(attractionService.list(null, null, null, null, -1, 20))
                 .thenThrow(new InvalidRequestException("page must not be negative"));
         mockMvc.perform(get("/api/attractions?page=-1"))
                 .andExpect(status().isBadRequest())
@@ -105,18 +105,18 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.timestamp").exists());
 
-        when(attractionService.list(null, null, null, 0, 0))
+        when(attractionService.list(null, null, null, null, 0, 0))
                 .thenThrow(new InvalidRequestException("size must be between 1 and 100"));
         mockMvc.perform(get("/api/attractions?size=0"))
                 .andExpect(status().isBadRequest());
 
-        when(attractionService.list(null, null, null, 0, 101))
+        when(attractionService.list(null, null, null, null, 0, 101))
                 .thenThrow(new InvalidRequestException("size must be between 1 and 100"));
         mockMvc.perform(get("/api/attractions?size=101"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
 
-        when(attractionService.list(null, "BOGUS", null, 0, 20))
+        when(attractionService.list(null, "BOGUS", null, null, 0, 20))
                 .thenThrow(new InvalidRequestException("Invalid category: BOGUS"));
         mockMvc.perform(get("/api/attractions?category=BOGUS"))
                 .andExpect(status().isBadRequest())
@@ -224,18 +224,18 @@ class AttractionControllerTest {
 
     @Test
     void list_sortParam_isForwardedToService() throws Exception {
-        when(attractionService.list(null, null, "rating", 0, 20))
+        when(attractionService.list(null, null, "rating", null, 0, 20))
                 .thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
 
         mockMvc.perform(get("/api/attractions?sort=rating"))
                 .andExpect(status().isOk());
 
-        verify(attractionService).list(null, null, "rating", 0, 20);
+        verify(attractionService).list(null, null, "rating", null, 0, 20);
     }
 
     @Test
     void list_invalidSort_returns400ErrorBody() throws Exception {
-        when(attractionService.list(null, null, "trending", 0, 20))
+        when(attractionService.list(null, null, "trending", null, 0, 20))
                 .thenThrow(new InvalidRequestException("Invalid sort: trending"));
 
         mockMvc.perform(get("/api/attractions?sort=trending"))
@@ -278,5 +278,29 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.commentCount").value(5))
                 .andExpect(jsonPath("$.favoriteCount").value(6202))
                 .andExpect(jsonPath("$.favorited").value(true));
+    }
+
+    @Test
+    void list_qParam_isForwardedToService() throws Exception {
+        when(attractionService.list(null, null, null, "wall", 0, 20))
+                .thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/api/attractions?q=wall"))
+                .andExpect(status().isOk());
+
+        verify(attractionService).list(null, null, null, "wall", 0, 20);
+    }
+
+    @Test
+    void list_overLengthQ_returns400ErrorBody() throws Exception {
+        String tooLong = "a".repeat(101);
+        when(attractionService.list(null, null, null, tooLong, 0, 20))
+                .thenThrow(new InvalidRequestException("q must be at most 100 characters"));
+
+        mockMvc.perform(get("/api/attractions").param("q", tooLong))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("q must be at most 100 characters"))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.timestamp").exists());
     }
 }

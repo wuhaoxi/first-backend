@@ -3,3 +3,18 @@ spring:
     hibernate:
       ddl-auto: create-drop
     show-sql: false
+  ai:
+    mcp:
+      server:
+        protocol: STATELESS
+        name: travel-mcp-server
+        version: 1.0.0
+
+app:
+  travel:
+    provider:
+      open-meteo-base-url: https://api.open-meteo.com
+      frankfurter-base-url: https://api.frankfurter.dev
+      exchange-rate-api-base-url: https://v6.exchangerate-api.com
+      connect-timeout: 3s
+      read-timeout: 8s

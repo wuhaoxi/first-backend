@@ -27,6 +27,7 @@ import java.util.List;
 public class AttractionService {
 
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_KEYWORD_LENGTH = 100;
     private static final int MIN_POPULAR_LIMIT = 1;
     private static final int MAX_POPULAR_LIMIT = 12;
 
@@ -50,38 +51,42 @@ public class AttractionService {
     private Duration rankingTtl;
 
     public PageResponse<AttractionSummaryResponse> list(String citySlug, String category, String sort,
-                                                         int page, int size) {
+                                                         String q, int page, int size) {
         if (page < 0) {
             throw new InvalidRequestException("page must not be negative");
         }
         if (size < 1 || size > MAX_PAGE_SIZE) {
             throw new InvalidRequestException("size must be between 1 and " + MAX_PAGE_SIZE);
         }
+        String keyword = escapeLike(normalizeKeyword(q));
         AttractionCategory parsedCategory = parseCategory(category);
         AttractionSort parsedSort = AttractionSort.from(sort);
 
-        if (shouldCache(citySlug, parsedCategory, parsedSort)) {
+        if (shouldCache(citySlug, parsedCategory, parsedSort, keyword)) {
             String key = "attraction:ranking:" + parsedSort.value() + ":" + page + ":" + size;
             return rankingCacheService.getOrLoad(key, rankingTtl,
                     new TypeReference<PageResponse<AttractionSummaryResponse>>() {},
-                    () -> fetchListPage(citySlug, parsedCategory, page, size, sortFor(parsedSort)));
+                    () -> fetchListPage(citySlug, parsedCategory, keyword, page, size, sortFor(parsedSort)));
         }
-        return fetchListPage(citySlug, parsedCategory, page, size, sortFor(parsedSort));
+        return fetchListPage(citySlug, parsedCategory, keyword, page, size, sortFor(parsedSort));
     }
 
     /**
-     * Filtered queries and {@code sort=latest} are never cached: filters are low-traffic and not a
-     * ranking view, while {@code latest} changes with every new attraction. {@code citySlug == null}
-     * matches the repository JPQL, where only null means "no city filter".
+     * Filtered queries, keyword searches, and {@code sort=latest} are never cached: filters are
+     * low-traffic and not a ranking view, while {@code latest} changes with every new attraction.
+     * {@code citySlug == null} matches the repository JPQL, where only null means "no city filter".
      */
-    private boolean shouldCache(String citySlug, AttractionCategory category, AttractionSort sort) {
-        return citySlug == null && category == null && sort != AttractionSort.LATEST;
+    private boolean shouldCache(String citySlug, AttractionCategory category, AttractionSort sort,
+                                String keyword) {
+        return keyword == null && citySlug == null && category == null && sort != AttractionSort.LATEST;
     }
 
     private PageResponse<AttractionSummaryResponse> fetchListPage(String citySlug, AttractionCategory category,
-                                                                  int page, int size, Sort resolvedSort) {
+                                                                  String keyword, int page, int size,
+                                                                  Sort resolvedSort) {
         Page<AttractionSummaryResponse> result = attractionRepository
-                .search(AttractionStatus.PUBLISHED, citySlug, category, PageRequest.of(page, size, resolvedSort))
+                .search(AttractionStatus.PUBLISHED, citySlug, category, keyword,
+                        PageRequest.of(page, size, resolvedSort))
                 .map(AttractionSummaryResponse::from);
         return PageResponse.from(result);
     }
@@ -123,6 +128,29 @@ public class AttractionService {
             throw new ResourceNotFoundException("Attraction not found with id: " + id);
         }
         return attraction;
+    }
+
+    /** Trims the keyword; blank becomes absent ({@code null}); over-long keywords are a 400. */
+    private String normalizeKeyword(String q) {
+        if (q == null) {
+            return null;
+        }
+        String trimmed = q.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > MAX_KEYWORD_LENGTH) {
+            throw new InvalidRequestException("q must be at most " + MAX_KEYWORD_LENGTH + " characters");
+        }
+        return trimmed;
+    }
+
+    /** Escapes JPQL LIKE wildcards ({@code !}, {@code %}, {@code _}) so the keyword matches literally. */
+    private String escapeLike(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        return keyword.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     private AttractionCategory parseCategory(String category) {

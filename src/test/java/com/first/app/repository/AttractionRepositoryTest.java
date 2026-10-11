@@ -164,14 +164,14 @@ class AttractionRepositoryTest {
 
         // No filters: drafts excluded; popular first, then createdAt DESC, id DESC tiebreak
         Page<Attraction> all = attractionRepository.search(
-                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 20, LIST_SORT));
+                AttractionStatus.PUBLISHED, null, null, null, PageRequest.of(0, 20, LIST_SORT));
         assertThat(all.getContent()).extracting(Attraction::getId)
                 .containsExactly(d.getId(), a.getId(), f.getId(), c.getId(), b.getId());
         assertThat(all.getTotalElements()).isEqualTo(5);
 
         // Pagination across the filtered list
         Page<Attraction> firstPage = attractionRepository.search(
-                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 2, LIST_SORT));
+                AttractionStatus.PUBLISHED, null, null, null, PageRequest.of(0, 2, LIST_SORT));
         assertThat(firstPage.getContent()).extracting(Attraction::getId)
                 .containsExactly(d.getId(), a.getId());
         assertThat(firstPage.getTotalElements()).isEqualTo(5);
@@ -179,27 +179,27 @@ class AttractionRepositoryTest {
 
         // City filter matches citySlug only
         Page<Attraction> beijing = attractionRepository.search(
-                AttractionStatus.PUBLISHED, "beijing", null, PageRequest.of(0, 20, LIST_SORT));
+                AttractionStatus.PUBLISHED, "beijing", null, null, PageRequest.of(0, 20, LIST_SORT));
         assertThat(beijing.getContent()).extracting(Attraction::getId)
                 .containsExactly(a.getId(), c.getId(), b.getId());
 
         // Category filter
         Page<Attraction> historical = attractionRepository.search(
-                AttractionStatus.PUBLISHED, null, AttractionCategory.HISTORICAL_SITE,
+                AttractionStatus.PUBLISHED, null, AttractionCategory.HISTORICAL_SITE, null,
                 PageRequest.of(0, 20, LIST_SORT));
         assertThat(historical.getContent()).extracting(Attraction::getId)
                 .containsExactly(d.getId(), a.getId(), c.getId());
 
         // Combined filters
         Page<Attraction> combined = attractionRepository.search(
-                AttractionStatus.PUBLISHED, "beijing", AttractionCategory.HISTORICAL_SITE,
+                AttractionStatus.PUBLISHED, "beijing", AttractionCategory.HISTORICAL_SITE, null,
                 PageRequest.of(0, 20, LIST_SORT));
         assertThat(combined.getContent()).extracting(Attraction::getId)
                 .containsExactly(a.getId(), c.getId());
 
         // Unknown city slug -> empty page, not an error
         Page<Attraction> none = attractionRepository.search(
-                AttractionStatus.PUBLISHED, "guilin", null, PageRequest.of(0, 20, LIST_SORT));
+                AttractionStatus.PUBLISHED, "guilin", null, null, PageRequest.of(0, 20, LIST_SORT));
         assertThat(none.getContent()).isEmpty();
         assertThat(none.getTotalElements()).isZero();
     }
@@ -340,7 +340,7 @@ class AttractionRepositoryTest {
         Sort ratingSort = Sort.by(Sort.Order.desc("ratingScore"), Sort.Order.desc("createdAt"),
                 Sort.Order.desc("id"));
         Page<Attraction> byRating = attractionRepository.search(
-                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 20, ratingSort));
+                AttractionStatus.PUBLISHED, null, null, null, PageRequest.of(0, 20, ratingSort));
         // 4.9 tie between B and A (equal createdAt) resolved by id DESC, then C, D, E
         assertThat(byRating.getContent()).extracting(Attraction::getId)
                 .containsExactly(b.getId(), a.getId(), c.getId(), d.getId(), e.getId());
@@ -348,21 +348,21 @@ class AttractionRepositoryTest {
         Sort heatSort = Sort.by(Sort.Order.desc("heatScore"), Sort.Order.desc("createdAt"),
                 Sort.Order.desc("id"));
         Page<Attraction> byHeat = attractionRepository.search(
-                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 20, heatSort));
+                AttractionStatus.PUBLISHED, null, null, null, PageRequest.of(0, 20, heatSort));
         // 90 tie between B and A resolved by id DESC, then D, E
         assertThat(byHeat.getContent()).extracting(Attraction::getId)
                 .containsExactly(c.getId(), b.getId(), a.getId(), d.getId(), e.getId());
 
         // City filter composes with the metric sort
         Page<Attraction> beijingByHeat = attractionRepository.search(
-                AttractionStatus.PUBLISHED, "beijing", null, PageRequest.of(0, 20, heatSort));
+                AttractionStatus.PUBLISHED, "beijing", null, null, PageRequest.of(0, 20, heatSort));
         assertThat(beijingByHeat.getContent()).extracting(Attraction::getId)
                 .containsExactly(b.getId(), a.getId());
 
         Sort favoritesSort = Sort.by(Sort.Order.desc("favoriteCount"), Sort.Order.desc("createdAt"),
                 Sort.Order.desc("id"));
         Page<Attraction> byFavorites = attractionRepository.search(
-                AttractionStatus.PUBLISHED, null, null, PageRequest.of(0, 20, favoritesSort));
+                AttractionStatus.PUBLISHED, null, null, null, PageRequest.of(0, 20, favoritesSort));
         // 50 tie between D and E resolved by createdAt DESC (D newer)
         assertThat(byFavorites.getContent()).extracting(Attraction::getId)
                 .containsExactly(c.getId(), a.getId(), b.getId(), d.getId(), e.getId());
@@ -381,6 +381,72 @@ class AttractionRepositoryTest {
                 List.of(published.getId(), draft.getId(), 999_999L), AttractionStatus.PUBLISHED);
 
         assertThat(found).extracting(Attraction::getId).containsExactly(published.getId());
+    }
+
+    @Test
+    void shouldSearchByKeywordAcrossNameAndNameZhCaseInsensitively() {
+        Attraction wall = buildPublished("great-wall", "Great Wall", "beijing",
+                AttractionCategory.HISTORICAL_SITE);
+        wall.setNameZh("长城");
+        Attraction palace = buildPublished("forbidden-city", "Forbidden City", "beijing",
+                AttractionCategory.HISTORICAL_SITE);
+        palace.setNameZh("故宫");
+        Attraction lake = buildPublished("west-lake", "West Lake", "hangzhou",
+                AttractionCategory.NATURE);
+        lake.setNameZh("西湖");
+        persistAndFlush(wall, palace, lake);
+        entityManager.clear();
+
+        // Case-insensitive substring match on name
+        assertThat(attractionRepository.search(AttractionStatus.PUBLISHED, null, null, "wall",
+                PageRequest.of(0, 20, LIST_SORT)).getContent())
+                .extracting(Attraction::getId).containsExactly(wall.getId());
+        assertThat(attractionRepository.search(AttractionStatus.PUBLISHED, null, null, "WALL",
+                PageRequest.of(0, 20, LIST_SORT)).getContent())
+                .extracting(Attraction::getId).containsExactly(wall.getId());
+
+        // Substring match on nameZh
+        assertThat(attractionRepository.search(AttractionStatus.PUBLISHED, null, null, "故宫",
+                PageRequest.of(0, 20, LIST_SORT)).getContent())
+                .extracting(Attraction::getId).containsExactly(palace.getId());
+
+        // Composes with the city filter
+        assertThat(attractionRepository.search(AttractionStatus.PUBLISHED, "hangzhou", null, "lake",
+                PageRequest.of(0, 20, LIST_SORT)).getContent())
+                .extracting(Attraction::getId).containsExactly(lake.getId());
+
+        // No match -> empty page, not an error
+        Page<Attraction> none = attractionRepository.search(
+                AttractionStatus.PUBLISHED, null, null, "gobi", PageRequest.of(0, 20, LIST_SORT));
+        assertThat(none.getContent()).isEmpty();
+        assertThat(none.getTotalElements()).isZero();
+    }
+
+    @Test
+    void shouldMatchEscapedLikeWildcardsLiterally() {
+        Attraction percent = buildPublished("percent-temple", "100% Temple", "beijing",
+                AttractionCategory.TEMPLE);
+        Attraction underscore = buildPublished("under-score-museum", "Under_Score Museum", "xian",
+                AttractionCategory.MUSEUM);
+        Attraction bang = buildPublished("wow-museum", "Wow! Museum", "shanghai",
+                AttractionCategory.MUSEUM);
+        persistAndFlush(percent, underscore, bang);
+        entityManager.clear();
+
+        // "!" + "%" matches the literal percent sign only
+        assertThat(attractionRepository.search(AttractionStatus.PUBLISHED, null, null, "100!%",
+                PageRequest.of(0, 20, LIST_SORT)).getContent())
+                .extracting(Attraction::getId).containsExactly(percent.getId());
+
+        // "!" + "_" matches the literal underscore only
+        assertThat(attractionRepository.search(AttractionStatus.PUBLISHED, null, null, "under!_score",
+                PageRequest.of(0, 20, LIST_SORT)).getContent())
+                .extracting(Attraction::getId).containsExactly(underscore.getId());
+
+        // "!!" matches a literal exclamation mark only
+        assertThat(attractionRepository.search(AttractionStatus.PUBLISHED, null, null, "wow!!",
+                PageRequest.of(0, 20, LIST_SORT)).getContent())
+                .extracting(Attraction::getId).containsExactly(bang.getId());
     }
 
     private Attraction buildPublished(String slug, String name, String citySlug,
