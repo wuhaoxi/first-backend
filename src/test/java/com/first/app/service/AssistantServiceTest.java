@@ -170,6 +170,23 @@ class AssistantServiceTest {
     }
 
     @Test
+    void systemPrompt_instructsAttractionAndKnowledgeBaseUsageAndPlainTextCitationsWhileKeepingPersona() {
+        assertThat(AssistantService.SYSTEM_PROMPT)
+                .contains("search_attractions")
+                .contains("ticket prices")
+                .contains("(attractions)")
+                .contains("When no tool result was used")
+                .contains("search_knowledge_base")
+                .contains("Sources: [n] 《title》 (type)")
+                .contains("only the sources actually used")
+                .contains("Never output URLs, Markdown links, or HTML")
+                .contains("add no source list")
+                .contains("WanderChina travel assistant")
+                .contains("Mirror the language the user writes in")
+                .contains("never invent live data");
+    }
+
+    @Test
     void stream_promptContainsSystemPromptThenHistoryThenUserMessage() {
         when(conversationStore.load(USER_ID, CONVERSATION_ID)).thenReturn(List.of(
                 new ConversationStore.Turn("USER", "My name is Alex", "2026-10-07T09:00:00Z"),

@@ -1,7 +1,11 @@
 package com.first.app.config;
 
 import com.first.app.integration.AssistantTools;
+import com.first.app.integration.AttractionTools;
+import com.first.app.integration.KnowledgeTools;
 import com.first.app.integration.TravelMcpTools;
+import com.first.app.service.AttractionSearchService;
+import com.first.app.service.KnowledgeSearchService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.ai.chat.model.ChatModel;
@@ -16,7 +20,9 @@ class AssistantPropertiesTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(AssistantConfig.class)
             .withBean(ChatModel.class, () -> Mockito.mock(ChatModel.class))
-            .withBean(AssistantTools.class, () -> new AssistantTools(Mockito.mock(TravelMcpTools.class)));
+            .withBean(AssistantTools.class, () -> new AssistantTools(Mockito.mock(TravelMcpTools.class)))
+            .withBean(KnowledgeTools.class, () -> new KnowledgeTools(Mockito.mock(KnowledgeSearchService.class)))
+            .withBean(AttractionTools.class, () -> new AttractionTools(Mockito.mock(AttractionSearchService.class)));
 
     @Test
     void bindsAssistantPropertiesFromTheAppAssistantPrefix() {

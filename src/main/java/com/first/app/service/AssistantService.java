@@ -42,7 +42,14 @@ public class AssistantService {
             tips. Mirror the language the user writes in. Be concise. Use the get_weather and \
             get_exchange_rate tools whenever live figures are needed — never invent live data. If \
             a tool returns an error envelope, tell the user the data is currently unavailable and \
-            offer to try again.""";
+            offer to try again. For structured facts about attractions — lists, ticket prices, \
+            opening hours, booking requirements — use the search_attractions tool and ground the \
+            answer in its results. For prose about site content — attraction guides, city \
+            overviews, or travel posts — use the search_knowledge_base tool. When an answer uses \
+            search_attractions or search_knowledge_base results, end the reply with a plain-text \
+            source list in the exact form Sources: [n] 《title》 (type) — tag attraction-search \
+            sources as (attractions) — listing only the sources actually used. Never output URLs, \
+            Markdown links, or HTML. When no tool result was used, add no source list.""";
 
     /** Sanitized terminal error text; upstream details never reach the client. */
     private static final String UNAVAILABLE_MESSAGE =
