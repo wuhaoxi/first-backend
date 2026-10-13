@@ -33,4 +33,6 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
     long countByCitySlugAndStatus(String citySlug, AttractionStatus status);
 
     List<Attraction> findByIdInAndStatus(Collection<Long> ids, AttractionStatus status);
+
+    List<Attraction> findByStatus(AttractionStatus status);
 }

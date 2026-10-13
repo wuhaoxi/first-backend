@@ -140,4 +140,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ErrorResponse.of(ex.getMessage(), 503));
     }
+
+    @ExceptionHandler(KnowledgeBaseUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleKnowledgeBaseUnavailable(KnowledgeBaseUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of(ex.getMessage(), 503));
+    }
 }

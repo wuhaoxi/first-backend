@@ -18,6 +18,7 @@ import com.first.app.repository.PostRepository;
 import com.first.app.util.PostCursorCodec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -44,6 +45,7 @@ public class PostService {
     private final PostStatsEnricher postStatsEnricher;
     private final AttractionRepository attractionRepository;
     private final PostAttractionRepository postAttractionRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${app.upload.dir:./uploads}")
     private String uploadDir;
@@ -75,6 +77,7 @@ public class PostService {
 
         Post saved = postRepository.save(post);
         saveAttractionLinks(saved.getId(), attractionIds);
+        eventPublisher.publishEvent(new PostChangedEvent(saved.getId()));
         return saved;
     }
 
@@ -221,6 +224,7 @@ public class PostService {
         if (attractionIds != null) {
             replaceAttractionLinks(id, attractionIds);
         }
+        eventPublisher.publishEvent(new PostChangedEvent(saved.getId()));
         return saved;
     }
 
@@ -229,6 +233,7 @@ public class PostService {
         Post post = getPostAsAuthor(id, userId);
         postAttractionRepository.deleteByPostId(id);
         postRepository.delete(post);
+        eventPublisher.publishEvent(new PostChangedEvent(id));
     }
 
     public ImageUploadResponse uploadImage(Long id, MultipartFile file, Long userId) {

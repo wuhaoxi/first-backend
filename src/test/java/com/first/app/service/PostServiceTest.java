@@ -26,6 +26,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -61,6 +62,9 @@ class PostServiceTest {
 
     @Mock
     private AttractionRepository attractionRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private PostService postService;
@@ -347,6 +351,45 @@ class PostServiceTest {
     }
 
     @Test
+    void create_publishesPostChangedEvent() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setTitle("Test Post");
+        request.setContent("# Hello");
+        when(postRepository.save(any(Post.class))).thenAnswer(inv -> {
+            Post p = inv.getArgument(0);
+            p.setId(10L);
+            return p;
+        });
+
+        postService.create(request, AUTHOR_ID);
+
+        verify(eventPublisher).publishEvent(new PostChangedEvent(10L));
+    }
+
+    @Test
+    void update_publishesPostChangedEvent() {
+        Post post = buildPost(1L, PostStatus.DRAFT, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.save(any(Post.class))).thenReturn(post);
+        UpdatePostRequest request = new UpdatePostRequest();
+        request.setTitle("New Title");
+
+        postService.update(1L, request, AUTHOR_ID);
+
+        verify(eventPublisher).publishEvent(new PostChangedEvent(1L));
+    }
+
+    @Test
+    void delete_publishesPostChangedEvent() {
+        Post post = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+
+        postService.delete(1L, AUTHOR_ID);
+
+        verify(eventPublisher).publishEvent(new PostChangedEvent(1L));
+    }
+
+    @Test
     void shouldThrow400WhenNonAuthorDeletes() {
         Post post = buildPost(1L, PostStatus.PUBLISHED, AUTHOR_ID);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
@@ -473,7 +516,11 @@ class PostServiceTest {
         request.setContent("# Tags");
         request.setTags(List.of("  tag1  ", "", "tag2"));
 
-        when(postRepository.save(any(Post.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(postRepository.save(any(Post.class))).thenAnswer(inv -> {
+            Post p = inv.getArgument(0);
+            p.setId(12L);
+            return p;
+        });
 
         Post result = postService.create(request, AUTHOR_ID);
 

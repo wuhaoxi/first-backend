@@ -34,6 +34,18 @@ app:
     window-chars: 6000
     max-message-length: 2000
     rate-limit-per-minute: 10
+  knowledge-base:
+    # Gate: blank key (env unset) keeps indexing a no-op and the search tool inert;
+    # the real key lives only in the environment (ZHIPU_API_KEY).
+    embedding-api-key: ${ZHIPU_API_KEY:}
+    embedding-base-url: https://open.bigmodel.cn/api/paas/v4
+    embedding-model: embedding-3
+    embedding-dimensions: 2048
+    top-k: 4
+    chunk-size-chars: 800
+    chunk-overlap-chars: 100
+    chroma-url: http://localhost:8000
+    collection-name: wanderchina_knowledge
   jwt:
     secret: this-is-a-test-secret-key-for-dev-only-change-in-production
     access-token-expiration: 900000
