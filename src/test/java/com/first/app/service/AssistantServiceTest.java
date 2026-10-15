@@ -31,6 +31,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -242,14 +245,26 @@ class AssistantServiceTest {
     }
 
     @Test
-    void stream_cancelledMidStream_doesNotPersistAssistantTurn() {
+    void stream_cancelledMidStream_doesNotPersistAssistantTurn() throws InterruptedException {
         model.emitting("Hello").thenHanging();
 
-        List<ServerSentEvent<AssistantEvent>> received = new ArrayList<>();
+        List<ServerSentEvent<AssistantEvent>> received = new CopyOnWriteArrayList<>();
+        CountDownLatch firstDeltaDelivered = new CountDownLatch(1);
         Disposable subscription = service
                 .stream(USER_ID, new AssistantChatRequest("hi", CONVERSATION_ID))
-                .subscribe(received::add);
+                .subscribe(event -> {
+                    received.add(event);
+                    if ("delta".equals(event.event())) {
+                        firstDeltaDelivered.countDown();
+                    }
+                });
 
+        // Spring AI's ChatModelStreamAdvisor publishes stream chunks on boundedElastic, so
+        // subscribe() returns before the first delta arrives. Wait for it (max 5s) before
+        // simulating the client disconnect — otherwise dispose() races the delivery.
+        assertThat(firstDeltaDelivered.await(5, TimeUnit.SECONDS))
+                .as("first delta delivered before disconnect")
+                .isTrue();
         subscription.dispose();
 
         assertThat(received).hasSize(1);
@@ -284,7 +299,7 @@ class AssistantServiceTest {
         return flux.collectList().block();
     }
 
-    /** Hand-rolled model: records prompts, emits chunks on the subscriber thread, then completes/errors/hangs. */
+    /** Hand-rolled model: records prompts, emits the configured chunks, then completes/errors/hangs. */
     private static final class FakeChatModel implements ChatModel {
 
         private final List<Prompt> prompts = new ArrayList<>();
